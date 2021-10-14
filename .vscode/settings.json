@@ -3,6 +3,7 @@
         "synch.h": "c",
         "*.inc": "c",
         "stdio.h": "c",
-        "init.h": "c"
+        "init.h": "c",
+        "interrupt.h": "c"
     }
 }
