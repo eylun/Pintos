@@ -17,6 +17,13 @@
 #error TIMER_FREQ <= 1000 recommended
 #endif
 
+/* List of processes that are sleeping. Processes are added to this 
+   list when thread.sleep() is called and removed when they wake-up */
+static struct list sleep_list;
+
+/* Lock to prevent race conditions on sleep_list */
+static struct lock sleep_lock;
+
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
 
@@ -37,6 +44,8 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+  list_init(&sleep_list);
+  lock_init(&sleep_lock);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -84,16 +93,67 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
+/* Sorts threads by their wakeup times */
+bool 
+sleep_sort (const struct list_elem *a,
+            const struct list_elem *b,
+            void *aux UNUSED)
+{
+  struct thread *thread_a = list_entry (a, struct thread, elem);
+  struct thread *thread_b = list_entry (b, struct thread, elem);
+  return thread_a->sleep < thread_b->sleep;
+}
+
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
 timer_sleep (int64_t ticks) 
 {
+  if(ticks <= 0) return;
+
+  struct thread *cur;
   int64_t start = timer_ticks ();
 
-  ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  ASSERT(intr_get_level () == INTR_ON);
+
+  cur = thread_current ();
+  cur->sleep = start + ticks;
+
+  lock_acquire(&sleep_lock);
+
+  list_insert_ordered (&sleep_list, &cur->elem, sleep_sort, NULL);
+
+  lock_release(&sleep_lock);
+
+  enum intr_level old_level = intr_disable ();
+  thread_block ();
+  intr_set_level (old_level);
+}
+
+/* wakes up threads that should no longer be sleeping */
+void
+wakeup_call (void)
+{ 
+  struct list_elem *cur;
+  struct thread *cur_thread;
+  
+  if(!lock_try_acquire(&sleep_lock)){
+    return;
+  }
+
+  while(!list_empty(&sleep_list))
+  {
+    cur = list_front (&sleep_list);
+    cur_thread = list_entry (cur, struct thread, elem);
+
+    if(cur_thread->sleep > timer_ticks())
+      break;
+    
+    list_remove (cur);
+    thread_unblock (cur_thread);
+  }
+
+  lock_release(&sleep_lock);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -171,6 +231,10 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+
+  if(!list_empty(&sleep_list))
+    wakeup_call ();
+    
   thread_tick ();
 }
 
