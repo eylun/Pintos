@@ -90,6 +90,9 @@ struct thread
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
 
+    /* Member for implementing timer_sleep. */
+    int64_t sleep;                      /* Sleeps until this tick */
+
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
@@ -118,6 +121,9 @@ typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
+bool priority_sort (const struct list_elem *a,
+                    const struct list_elem *b,
+                    void *aux);
 void thread_unblock (struct thread *);
 
 struct thread *thread_current (void);
