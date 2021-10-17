@@ -105,7 +105,6 @@ bool sema_try_down(struct semaphore *sema)
 void sema_up(struct semaphore *sema)
 {
   enum intr_level old_level;
-  // bool unblocked = false;
 
   ASSERT(sema != NULL);
 
@@ -115,14 +114,11 @@ void sema_up(struct semaphore *sema)
   {
     thread_unblock(list_entry(list_pop_front(&sema->waiters),
                               struct thread, elem));
-    // unblocked = true;
   }
   sema->value++;
   intr_set_level(old_level);
 
-  // if(unblocked){
   thread_yield();
-  // }
 }
 
 static void sema_test_helper(void *sema_);

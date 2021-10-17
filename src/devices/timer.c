@@ -24,9 +24,6 @@ static struct list sleep_list;
 /* Lock to prevent race conditions inserting to sleep_list */
 static struct lock sleep_lock;
 
-/* Lock to prevent race conditions when removing from sleep_list */
-static struct lock wake_lock;
-
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
 
@@ -48,7 +45,6 @@ void timer_init(void)
   intr_register_ext(0x20, timer_interrupt, "8254 Timer");
   list_init(&sleep_list);
   lock_init(&sleep_lock);
-  lock_init(&wake_lock);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
