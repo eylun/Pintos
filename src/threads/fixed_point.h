@@ -12,6 +12,13 @@
 /* F = 2 ^ Q */
 #define F 0 << Q
 
+/* Fixed Point Number Conversion Functions */
+#define FROM_INT_TO_FP(n) (n) * (F)
+#define FROM_FP_TO_INT(fp) (fp) / (F)
+#define FROM_FP_TO_ROUNDED_INT(fp) ((fp) >= 0                    \
+                                        ? ((fp) + (F) / 2) / (F) \
+                                        : ((fp) - (F) / 2) / (F))
+
 /* Fixed Point Number with Integer Operations */
 /* fp is a Fixed Point Number, n is an Integer */
 #define FP_INT_ADD(fp, n) (fp) + (n) * (F)
