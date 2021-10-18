@@ -95,11 +95,11 @@ struct thread
    int64_t sleep; /* Sleeps until this tick */
 
    /* Shared between thread.c and synch.c. */
-   struct list_elem elem;     /* List element. */
-   
+   struct list_elem elem; /* List element. */
+
    /* Properties used by advanced scheduler */
-   int nice;                  /* Thread niceness level */
-   int recent_cpu;            /* Thread recent_cpu level */
+   int nice;       /* Thread niceness level */
+   int recent_cpu; /* Thread recent_cpu level */
 
 #ifdef USERPROG
    /* Owned by userprog/process.c. */

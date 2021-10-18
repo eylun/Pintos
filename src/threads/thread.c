@@ -37,6 +37,9 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
+/* Load Average value used by advanced scheduler */
+static int load_avg;
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame
 {
@@ -350,7 +353,8 @@ void thread_foreach(thread_action_func *func, void *aux)
 void thread_set_priority(int new_priority)
 {
   /* When mlfqs flag is provided, threads_set_priority has to be disabled */
-  if (thread_mlfqs) {
+  if (thread_mlfqs)
+  {
     return;
   }
   thread_current()->priority = new_priority;
@@ -485,6 +489,25 @@ init_thread(struct thread *t, const char *name, int priority)
   old_level = intr_disable();
   list_push_back(&all_list, &t->allelem);
   intr_set_level(old_level);
+
+  /* When mlfqs flag is provided, initialize niceness and recent_cpu.
+     The initial thread will start with a nice value of 0.
+     The initial thread will start with a recent_cpu value of 0.
+     Every other thread will inherit the nice and recent_cpu values
+     from the parent thread, the parent thread is the current thread running. */
+  if (thread_mlfqs)
+  {
+    if (t == initial_thread)
+    {
+      t->nice = 0;
+      t->recent_cpu = 0;
+    }
+    else
+    {
+      t->nice = thread_current()->nice;
+      t->recent_cpu = thread_current()->recent_cpu;
+    }
+  }
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
