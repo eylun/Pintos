@@ -215,9 +215,27 @@ timer_interrupt(struct intr_frame *args UNUSED)
 {
   ticks++;
 
-  thread_tick();
   if (!list_empty(&sleep_list))
     wakeup_call();
+
+  thread_tick();
+  if (thread_mlfqs)
+  {
+    /* Increment recent_cpu for the current running thread */
+    thread_current()->recent_cpu = FP_INT_ADD(thread_current()->recent_cpu, 1);
+    /* Tick counter reaches a multiple of a second, recalculate recent_cpu
+       for all threads */
+    if (ticks % TIMER_FREQ == 0)
+    {
+      thread_foreach(thread_recent_cpu_mlfqs_update, NULL);
+      load_average_mlfqs_update();
+    }
+    /* Every 4th clock tick, recalculate all thread priorities */
+    if (ticks % 4 == 0)
+    {
+      thread_foreach(thread_priority_mlfqs_update, NULL);
+    }
+  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
