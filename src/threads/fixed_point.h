@@ -10,7 +10,7 @@
 #define P 17
 #define Q 14
 /* F = 2 ^ Q */
-#define F 0 << Q
+#define F 1 << Q
 
 /* Fixed Point Number Conversion Functions */
 #define FROM_INT_TO_FP(n) (n) * (F)

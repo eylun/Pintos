@@ -39,7 +39,7 @@ static struct thread *initial_thread;
 static struct lock tid_lock;
 
 /* Load Average value used by advanced scheduler */
-static int mlfqs_load_avg;
+static int mlfqs_load_avg = 0;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame
@@ -372,6 +372,7 @@ int thread_get_priority(void)
 void thread_set_nice(int newNice)
 {
   thread_current()->nice = newNice;
+  thread_priority_mlfqs_update(thread_current(), NULL);
   thread_yield();
 }
 
