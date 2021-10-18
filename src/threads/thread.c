@@ -38,7 +38,7 @@ static struct thread *initial_thread;
 static struct lock tid_lock;
 
 /* Load Average value used by advanced scheduler */
-static int load_avg;
+static int mlfqs_load_avg;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame
@@ -368,32 +368,54 @@ int thread_get_priority(void)
 }
 
 /* Sets the current thread's nice value to NICE. */
-void thread_set_nice(int nice UNUSED)
+void thread_set_nice(int newNice)
 {
-  /* Not yet implemented. */
+  thread_current()->nice = newNice;
+  // TODO: Implement thread priority calculate
+  thread_yield();
 }
 
 /* Returns the current thread's nice value. */
 int thread_get_nice(void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int thread_get_load_avg(void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return FROM_FP_TO_ROUNDED_INT(FP_INT_MULT(mlfqs_load_avg, 100));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return FROM_FP_TO_ROUNDED_INT(FP_INT_MULT(thread_current()->recent_cpu, 100));
 }
 
+/* Advanced Scheduler Functions
+   1) Updating a thread's priority
+   2) Updating a thread's recent_cpu
+   3) Updating the load average
+   1) and 2) will be called by thread_foreach(), so they require the
+   UNUSED aux parameter. */
+
+void thread_priority_mlfqs_update(struct thread *t, void *aux UNUSED)
+{
+  ASSERT(thread_mlfqs);
+  return;
+}
+
+void thread_recent_cpu_mlfqs_update(struct thread *t, void *aux UNUSED)
+{
+  ASSERT(thread_mlfqs);
+  return;
+}
+
+void load_average_mlfqs_update(void)
+{
+  ASSERT(thread_mlfqs);
+}
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by
@@ -403,8 +425,7 @@ int thread_get_recent_cpu(void)
    blocks.  After that, the idle thread never appears in the
    ready list.  It is returned by next_thread_to_run() as a
    special case when the ready list is empty. */
-static void
-idle(void *idle_started_ UNUSED)
+static void idle(void *idle_started_ UNUSED)
 {
   struct semaphore *idle_started = idle_started_;
   idle_thread = thread_current();

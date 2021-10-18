@@ -150,4 +150,9 @@ void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
 
+/* Advanced Scheduler Functions */
+void thread_priority_mlfqs_update(struct thread *, void *UNUSED);
+void thread_recent_cpu_mlfqs_update(struct thread *, void *UNUSED);
+void load_avg_mlfqs_update(void);
+
 #endif /* threads/thread.h */
