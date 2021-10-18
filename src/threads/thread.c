@@ -442,6 +442,16 @@ void thread_recent_cpu_mlfqs_update(struct thread *t, void *aux UNUSED)
 void load_average_mlfqs_update(void)
 {
   ASSERT(thread_mlfqs);
+  int ready = list_size(&ready_list);
+  /* Ready list does not include the current running thread */
+  if (thread_current() != idle_thread)
+  {
+    ready++;
+  }
+  mlfqs_load_avg = FP_FP_MULT(mlfqs_load_avg,
+                              FP_INT_QUO(FROM_INT_TO_FP(59), 60));
+  mlfqs_load_avg = FP_FP_ADD(
+      mlfqs_load_avg, FP_INT_MULT(FP_INT_QUO(FROM_INT_TO_FP(1), 60), ready));
 }
 /* Idle thread.  Executes when no other thread is ready to run.
 
