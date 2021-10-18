@@ -13,6 +13,17 @@
 #define F 0 << Q
 
 /* Fixed Point Number with Integer Operations */
+/* fp is a Fixed Point Number, n is an Integer */
+#define FP_INT_ADD(fp, n) (fp) + (n) * (F)
+#define FP_INT_DIFF(fp, n) (fp) - (n) * (F)
+#define FP_INT_MULT(fp, n) (fp) * (n)
+#define FP_INT_QUO(fp, n) (fp) / (n)
 
 /* Fixed Point Number with Fixed Point Number Operations */
+/* fp, fp_ are Fixed Point Numbers */
+#define FP_FP_ADD(fp, fp_) (fp) + (fp_)
+#define FP_FP_DIFF(fp, fp_) (fp) - (fp_)
+#define FP_FP_MULT(fp, fp_) (((int64_t)(fp)) * (fp_) / (F))
+#define FP_FP_QUO(fp, fp_) (((int64_t)(fp)) * (F) / (fp_))
+
 #endif /* threads/fixed_point.h */
