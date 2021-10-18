@@ -7,6 +7,7 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "threads/fixed_point.h"
 
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -96,8 +97,8 @@ bool sleep_sort(const struct list_elem *a,
                 const struct list_elem *b,
                 void *aux UNUSED)
 {
-  struct thread *thread_a = list_entry(a, struct thread, elem);
-  struct thread *thread_b = list_entry(b, struct thread, elem);
+  struct thread *thread_a = list_entry(a, struct thread, sleepelem);
+  struct thread *thread_b = list_entry(b, struct thread, sleepelem);
   return thread_a->sleep < thread_b->sleep;
 }
 
@@ -130,19 +131,17 @@ void timer_sleep(int64_t ticks)
 /* wakes up threads that should no longer be sleeping */
 void wakeup_call(void)
 {
-  struct list_elem *cur;
   struct thread *cur_thread;
+  int64_t ticks = timer_ticks();
 
   while (!list_empty(&sleep_list))
   {
-    cur = list_front(&sleep_list);
-    cur_thread = list_entry(cur, struct thread, sleepelem);
+    cur_thread = list_entry(list_begin(&sleep_list), struct thread, sleepelem);
 
-    if (cur_thread->sleep > timer_ticks())
+    if (cur_thread->sleep > ticks)
       break;
-
-    list_remove(cur);
     thread_unblock(cur_thread);
+    list_pop_front(&sleep_list);
   }
 }
 
@@ -214,10 +213,26 @@ static void
 timer_interrupt(struct intr_frame *args UNUSED)
 {
   ticks++;
+  wakeup_call();
 
   thread_tick();
-  if (!list_empty(&sleep_list))
-    wakeup_call();
+  if (thread_mlfqs)
+  {
+    /* Increment recent_cpu for the current running thread */
+    thread_current()->recent_cpu = FP_INT_ADD(thread_current()->recent_cpu, 1);
+    /* Tick counter reaches a multiple of a second, recalculate recent_cpu
+       for all threads */
+    if (ticks % TIMER_FREQ == 0)
+    {
+      thread_foreach(thread_recent_cpu_mlfqs_update, NULL);
+      load_average_mlfqs_update();
+    }
+    /* Every 4th clock tick, recalculate all thread priorities */
+    if (ticks % 4 == 0)
+    {
+      thread_foreach(thread_priority_mlfqs_update, NULL);
+    }
+  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
