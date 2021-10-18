@@ -428,7 +428,15 @@ void thread_priority_mlfqs_update(struct thread *t, void *aux UNUSED)
 void thread_recent_cpu_mlfqs_update(struct thread *t, void *aux UNUSED)
 {
   ASSERT(thread_mlfqs);
-  return;
+  ASSERT(is_thread(t));
+  /* Ignore idle thread */
+  if (t == idle_thread)
+  {
+    return;
+  }
+  int load_fraction = FP_FP_QUO(FP_INT_MULT(mlfqs_load_avg, 2),
+                                FP_INT_ADD(FP_INT_MULT(mlfqs_load_avg, 2), 1));
+  t->recent_cpu = FP_INT_ADD(FP_FP_MULT(load_fraction, t->recent_cpu), t->nice);
 }
 
 void load_average_mlfqs_update(void)
