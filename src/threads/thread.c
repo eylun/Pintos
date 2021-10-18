@@ -349,6 +349,10 @@ void thread_foreach(thread_action_func *func, void *aux)
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority(int new_priority)
 {
+  /* When mlfqs flag is provided, threads_set_priority has to be disabled */
+  if (thread_mlfqs) {
+    return;
+  }
   thread_current()->priority = new_priority;
   thread_yield();
 }
