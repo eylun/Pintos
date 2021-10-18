@@ -97,8 +97,8 @@ bool sleep_sort(const struct list_elem *a,
                 const struct list_elem *b,
                 void *aux UNUSED)
 {
-  struct thread *thread_a = list_entry(a, struct thread, elem);
-  struct thread *thread_b = list_entry(b, struct thread, elem);
+  struct thread *thread_a = list_entry(a, struct thread, sleepelem);
+  struct thread *thread_b = list_entry(b, struct thread, sleepelem);
   return thread_a->sleep < thread_b->sleep;
 }
 
@@ -131,19 +131,17 @@ void timer_sleep(int64_t ticks)
 /* wakes up threads that should no longer be sleeping */
 void wakeup_call(void)
 {
-  struct list_elem *cur;
   struct thread *cur_thread;
+  int64_t ticks = timer_ticks();
 
   while (!list_empty(&sleep_list))
   {
-    cur = list_front(&sleep_list);
-    cur_thread = list_entry(cur, struct thread, sleepelem);
+    cur_thread = list_entry(list_begin(&sleep_list), struct thread, sleepelem);
 
-    if (cur_thread->sleep > timer_ticks())
+    if (cur_thread->sleep > ticks)
       break;
-
-    list_remove(cur);
     thread_unblock(cur_thread);
+    list_pop_front(&sleep_list);
   }
 }
 
@@ -215,9 +213,7 @@ static void
 timer_interrupt(struct intr_frame *args UNUSED)
 {
   ticks++;
-
-  if (!list_empty(&sleep_list))
-    wakeup_call();
+  wakeup_call();
 
   thread_tick();
   if (thread_mlfqs)

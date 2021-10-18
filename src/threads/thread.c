@@ -372,7 +372,6 @@ int thread_get_priority(void)
 void thread_set_nice(int newNice)
 {
   thread_current()->nice = newNice;
-  // TODO: Implement thread priority calculate
   thread_yield();
 }
 
