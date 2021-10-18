@@ -211,14 +211,8 @@ void lock_acquire(struct lock *lock)
   ASSERT(!intr_context());
   ASSERT(!lock_held_by_current_thread(lock));
 
-  /* old code */
-  /*
-  sema_down(&lock->semaphore);
-  lock->holder = thread_current();
-  */
-  /* old code ends */
-
   struct thread *current_thread, *lock_holder;
+  sema_down(&lock->semaphore);
   current_thread = thread_current();
   lock_holder = lock->holder;
 
@@ -269,9 +263,46 @@ void lock_release(struct lock *lock)
   ASSERT(lock != NULL);
   ASSERT(lock_held_by_current_thread(lock));
 
+  /* Unassociates the thread from the lock */
   lock->holder = NULL;
+  list_remove(&lock->held);
   sema_up(&lock->semaphore);
+
+  /* Reverts priority if donation has occured */
+
+  struct thread *current_thread = thread_current();
+  if (current_thread->donated)
+  {
+    // get highest priority from semaphores
+    // from locks held
+  }
 }
+
+/*
+bool semaphore_less_func(const struct list_elem *a,
+                         const struct list_elem *b,
+                         void *aux UNUSED)
+{
+  struct lock *lock_a = list_entry(a, struct lock, held);
+  struct lock *lock_b = list_entry(b, struct lock, held);
+
+  int a, b;
+
+  // if there are no waiters, assign priority of 0
+  if (list_empty(&lock_a->semaphore.waiters))
+  {
+    a = 0;
+  }
+  else
+  {
+  }
+
+  if (list_empty(&lock_b->semaphore.waiters))
+  {
+    b = 0;
+  }
+} 
+*/
 
 /* Returns true if the current thread holds LOCK, false
    otherwise.  (Note that testing whether some other thread holds
