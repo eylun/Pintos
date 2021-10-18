@@ -403,7 +403,26 @@ int thread_get_recent_cpu(void)
 void thread_priority_mlfqs_update(struct thread *t, void *aux UNUSED)
 {
   ASSERT(thread_mlfqs);
-  return;
+  ASSERT(is_thread(t));
+  /* Ignore idle thread */
+  if (t == idle_thread)
+  {
+    return;
+  }
+  int new_priority = PRI_MAX -
+                     FROM_FP_TO_ROUNDED_INT(FP_INT_QUO(t->recent_cpu, 4)) -
+                     t->nice * 2;
+  /* If newly calculated priority exceeds PRI_MAX or goes below PRI_MIN,
+     fix the value */
+  if (new_priority > PRI_MAX)
+  {
+    new_priority = PRI_MAX;
+  }
+  else if (new_priority < PRI_MIN)
+  {
+    new_priority = PRI_MIN;
+  }
+  t->priority = new_priority;
 }
 
 void thread_recent_cpu_mlfqs_update(struct thread *t, void *aux UNUSED)
@@ -528,6 +547,7 @@ init_thread(struct thread *t, const char *name, int priority)
       t->nice = thread_current()->nice;
       t->recent_cpu = thread_current()->recent_cpu;
     }
+    thread_priority_mlfqs_update(t, NULL);
   }
 }
 
