@@ -213,7 +213,6 @@ void lock_acquire(struct lock *lock)
   ASSERT(!lock_held_by_current_thread(lock));
 
   struct thread *current_thread, *lock_holder;
-  sema_down(&lock->semaphore);
   current_thread = thread_current();
   lock_holder = lock->holder;
 
@@ -221,16 +220,14 @@ void lock_acquire(struct lock *lock)
   {
     lock->holder = current_thread;
     list_push_front(&(lock->holder->locks_held), &(lock->held));
-
-    // update lock_priority
-    lock->lock_priority = lock->holder->priority;
   }
   else
   {
     if (current_thread->priority > lock_holder->priority)
     {
-
       // TODO: save thread priority
+
+      // current thread donates priority to lock_holder
       lock_holder->priority = current_thread->priority;
       lock_holder->donated = true;
 
@@ -238,8 +235,9 @@ void lock_acquire(struct lock *lock)
       lock->lock_priority = current_thread->priority;
     }
 
-    list_push_front(&((lock->semaphore).waiters), &(current_thread->sema_elem));
+    // list_push_front(&((lock->semaphore).waiters), &(current_thread->sema_elem));
     sema_down(&(lock->semaphore));
+    lock->holder = current_thread;
     thread_yield();
   }
 }
@@ -306,6 +304,12 @@ void lock_release(struct lock *lock)
       current_thread->priority = list_entry(list_pop_front(&current_thread->locks_held),
                                             struct lock, held)
                                      ->lock_priority;
+
+      // reverts back to initial_priority if it was higher
+      if (current_thread->initial_priority > current_thread->priority)
+      {
+        current_thread->priority = current_thread->initial_priority;
+      }
     }
   }
 

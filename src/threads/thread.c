@@ -217,10 +217,7 @@ tid_t thread_create(const char *name, int priority,
 
   /* own code begins */
 
-  /* compares priority of current running thread and newly created thread */
-  if (t->priority > thread_get_priority())
-    thread_yield();
-
+  thread_yield();
   /* own code ends */
 
   return tid;
@@ -371,6 +368,9 @@ void thread_set_priority(int new_priority)
 /* Returns the current thread's priority. */
 int thread_get_priority(void)
 {
+  /*
+  printf("Current running thread id: %d\n", thread_current()->tid);
+  */
   return thread_current()->priority;
 }
 
@@ -551,6 +551,8 @@ init_thread(struct thread *t, const char *name, int priority)
   strlcpy(t->name, name, sizeof t->name);
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
+  t->initial_priority = priority;
+
   t->magic = THREAD_MAGIC;
   list_init(&t->locks_held);
 
