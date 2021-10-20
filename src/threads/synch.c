@@ -219,7 +219,8 @@ void lock_acquire(struct lock *lock)
   if (lock_holder == NULL)
   {
     lock->holder = current_thread;
-    list_push_front(&(lock->holder->locks_held), &(lock->held));
+    sema_down(&lock->semaphore);
+    list_push_front(&(lock->holder->locks_held), &lock->held);
   }
   else
   {
@@ -236,8 +237,9 @@ void lock_acquire(struct lock *lock)
     }
 
     // list_push_front(&((lock->semaphore).waiters), &(current_thread->sema_elem));
-    sema_down(&(lock->semaphore));
+    sema_down(&lock->semaphore);
     lock->holder = current_thread;
+    list_push_front(&(lock->holder->locks_held), &lock->held);
     thread_yield();
   }
 }
@@ -301,7 +303,7 @@ void lock_release(struct lock *lock)
       // - by sorting list of locks by priority, pops the first one
       // - nested donations
       list_sort(&current_thread->locks_held, locks_priority_sort, NULL);
-      current_thread->priority = list_entry(list_pop_front(&current_thread->locks_held),
+      current_thread->priority = list_entry(list_front(&current_thread->locks_held),
                                             struct lock, held)
                                      ->lock_priority;
 
