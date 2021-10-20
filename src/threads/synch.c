@@ -123,18 +123,17 @@ void sema_up(struct semaphore *sema)
 
   /* own code */
   /* checks priority and yields */
-  if (thread != NULL && thread->priority > thread_get_priority())
+
+  /* if called in an interrupt context, only yields upon return */
+  if (intr_context())
   {
-    /* if called in an interrupt context, only yields upon return */
-    if (intr_context())
-    {
-      intr_yield_on_return();
-    }
-    else
-    {
-      thread_yield();
-    }
+    intr_yield_on_return();
   }
+  else
+  {
+    thread_yield();
+  }
+
   /* end of code */
 }
 
@@ -226,11 +225,17 @@ void lock_acquire(struct lock *lock)
   {
     if (current_thread->priority > lock_holder->priority)
     {
-      // TODO: save thread priority
-
       // current thread donates priority to lock_holder
       lock_holder->priority = current_thread->priority;
       lock_holder->donated = true;
+      current_thread->blocked_by = lock_holder;
+
+      struct thread *blocker = lock_holder->blocked_by;
+      while (!(blocker == NULL) && blocker->priority < lock_holder->priority)
+      {
+        blocker->priority = lock_holder->priority;
+        blocker = blocker->blocked_by;
+      }
 
       // update lock_priority as priority is donated
       lock->lock_priority = current_thread->priority;
@@ -240,6 +245,17 @@ void lock_acquire(struct lock *lock)
     sema_down(&lock->semaphore);
     lock->holder = current_thread;
     list_push_front(&(lock->holder->locks_held), &lock->held);
+
+    // sort semaphore waiters and get the highest priority
+    if (list_empty(&lock->semaphore.waiters))
+    {
+      lock->lock_priority = -1;
+    }
+    else
+    {
+      list_sort(&lock->semaphore.waiters, priority_sort, NULL);
+      lock->lock_priority = list_entry(list_front(&lock->semaphore.waiters), struct thread, elem)->priority;
+    }
     thread_yield();
   }
 }

@@ -97,6 +97,8 @@ struct thread
    struct list_elem sema_elem; /* list element to associate a thread w a semaphore */
    bool donated;               /* if it has received donated priority */
    struct list locks_held;     /* locks held by thread (for multiple donations) */
+
+   struct thread *blocked_by;  /* thread which is blocking this thread (for nested donations) */
    /* end of code */
 
    /* Member for implementing timer_sleep. */
