@@ -224,7 +224,7 @@ timer_interrupt(struct intr_frame *args UNUSED)
        for all threads */
     if (ticks % TIMER_FREQ == 0)
     {
-      load_average_mlfqs_update();
+      load_avg_mlfqs_update();
       thread_foreach(thread_recent_cpu_mlfqs_update, NULL);
     }
     /* Every 4th clock tick, recalculate all thread priorities */
