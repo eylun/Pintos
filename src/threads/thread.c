@@ -364,7 +364,6 @@ void thread_set_priority(int new_priority)
   if (new_priority > thread_current()->priority && new_priority > thread_current()->initial_priority)
   {
     thread_current()->priority = new_priority;
-    thread_current()->initial_priority = new_priority;
   }
   else
   {
@@ -389,8 +388,9 @@ void thread_set_priority(int new_priority)
         thread_current()->priority = new_priority;
       }
     }
-    thread_current()->initial_priority = new_priority;
+    thread_current()->donated = true;
   }
+  thread_current()->initial_priority = new_priority;
   thread_yield();
 }
 
