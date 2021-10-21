@@ -309,7 +309,7 @@ void lock_release(struct lock *lock)
   struct thread *current_thread = thread_current();
 
   /* Reverts priority if donation has occured */
-  if (current_thread->donated)
+  if (current_thread->donated && !list_empty(&lock->semaphore.waiters))
   {
     if (list_empty(&current_thread->locks_held))
     {
