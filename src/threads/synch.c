@@ -220,20 +220,24 @@ void lock_acquire(struct lock *lock)
     lock->holder = current_thread;
     sema_down(&lock->semaphore);
     list_push_front(&(lock->holder->locks_held), &lock->held);
+    lock->lock_priority = current_thread->priority;
   }
   else
   {
     if (current_thread->priority > lock_holder->priority)
     {
       // current thread donates priority to lock_holder
-      lock_holder->priority = current_thread->priority;
-      lock_holder->donated = true;
       current_thread->blocked_by = lock_holder;
 
-      struct thread *blocker = lock_holder->blocked_by;
-      while (!(blocker == NULL) && blocker->priority < lock_holder->priority)
+      struct thread *blocker = lock_holder;
+      struct thread *blocked = current_thread;
+      while (!(blocker == NULL))
       {
-        blocker->priority = lock_holder->priority;
+        if (blocker->priority < blocked->priority)
+        {
+          blocker->priority = blocked->priority;
+          blocker->donated = true;
+        }
         blocker = blocker->blocked_by;
       }
 
