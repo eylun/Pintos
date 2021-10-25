@@ -215,7 +215,10 @@ tid_t thread_create(const char *name, int priority,
   /* Add to run queue. */
   thread_unblock(t);
 
+  /* own code begins */
+
   thread_yield();
+  /* own code ends */
 
   return tid;
 }
@@ -358,40 +361,73 @@ void thread_set_priority(int new_priority)
   {
     return;
   }
-  thread_current()->priority = new_priority;
+  if (new_priority > thread_current()->priority && new_priority > thread_current()->initial_priority)
+  {
+    thread_current()->priority = new_priority;
+  }
+  else
+  {
+    // wan sze feels like it's missing something
+    // yufeng didn't think this would work at all
+    // i want to die
+    if (list_empty(&thread_current()->locks_held))
+    {
+      thread_current()->priority = new_priority;
+    }
+    else
+    {
+      list_sort(&thread_current()->locks_held, locks_priority_sort, NULL);
+      struct lock *highest = list_entry(list_front(&thread_current()->locks_held), struct lock, held);
+      
+      if (new_priority < highest->lock_priority)
+      {
+        thread_current()->priority = highest->lock_priority;
+      }
+      else
+      {
+        thread_current()->priority = new_priority;
+      }
+    }
+    thread_current()->donated = true;
+  }
+  thread_current()->initial_priority = new_priority;
   thread_yield();
 }
 
 /* Returns the current thread's priority. */
 int thread_get_priority(void)
 {
+  /*
+  printf("Current running thread id: %d\n", thread_current()->tid);
+  */
   return thread_current()->priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
-void thread_set_nice(int newNice)
+void thread_set_nice(int nice UNUSED)
 {
-  thread_current()->nice = newNice;
-  thread_priority_mlfqs_update(thread_current(), NULL);
-  thread_yield();
+  /* Not yet implemented. */
 }
 
 /* Returns the current thread's nice value. */
 int thread_get_nice(void)
 {
-  return thread_current()->nice;
+  /* Not yet implemented. */
+  return 0;
 }
 
 /* Returns 100 times the system load average. */
 int thread_get_load_avg(void)
 {
-  return FROM_FP_TO_ROUNDED_INT(FP_INT_MULT(mlfqs_load_avg, 100));
+  /* Not yet implemented. */
+  return 0;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void)
 {
-  return FROM_FP_TO_ROUNDED_INT(FP_INT_MULT(thread_current()->recent_cpu, 100));
+  /* Not yet implemented. */
+  return 0;
 }
 
 /* Advanced Scheduler Functions
@@ -440,7 +476,7 @@ void thread_recent_cpu_mlfqs_update(struct thread *t, void *aux UNUSED)
   t->recent_cpu = FP_INT_ADD(FP_FP_MULT(load_fraction, t->recent_cpu), t->nice);
 }
 
-void load_average_mlfqs_update(void)
+void load_avg_mlfqs_update(void)
 {
   ASSERT(thread_mlfqs);
   int ready = list_size(&ready_list);
@@ -463,7 +499,8 @@ void load_average_mlfqs_update(void)
    blocks.  After that, the idle thread never appears in the
    ready list.  It is returned by next_thread_to_run() as a
    special case when the ready list is empty. */
-static void idle(void *idle_started_ UNUSED)
+static void
+idle(void *idle_started_ UNUSED)
 {
   struct semaphore *idle_started = idle_started_;
   idle_thread = thread_current();
@@ -543,7 +580,12 @@ init_thread(struct thread *t, const char *name, int priority)
   strlcpy(t->name, name, sizeof t->name);
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
+  t->initial_priority = priority;
+  t->donated = false;
+  t->blocked_by = NULL;
+
   t->magic = THREAD_MAGIC;
+  list_init(&t->locks_held);
 
   old_level = intr_disable();
   list_push_back(&all_list, &t->allelem);
@@ -595,6 +637,7 @@ next_thread_to_run(void)
     return idle_thread;
   else
   {
+    /* Runs the thread with highest priority by sorting ready_list and popping the first elem */
     list_sort(&ready_list, priority_sort, NULL);
     return list_entry(list_pop_front(&ready_list), struct thread, elem);
   }

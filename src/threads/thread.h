@@ -91,6 +91,16 @@ struct thread
    struct list_elem allelem;   /* List element for all threads list. */
    struct list_elem sleepelem; /* List element for sleeping threads list. */
 
+   /* own code */
+   int initial_priority; /* initial priority of a thread */
+
+   struct list_elem sema_elem; /* list element to associate a thread w a semaphore */
+   bool donated;               /* if it has received donated priority */
+   struct list locks_held;     /* locks held by thread (for multiple donations) */
+
+   struct thread *blocked_by;  /* thread which is blocking this thread (for nested donations) */
+   /* end of code */
+
    /* Member for implementing timer_sleep. */
    int64_t sleep; /* Sleeps until this tick */
 
