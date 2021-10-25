@@ -406,28 +406,27 @@ int thread_get_priority(void)
 /* Sets the current thread's nice value to NICE. */
 void thread_set_nice(int nice UNUSED)
 {
-  /* Not yet implemented. */
+  thread_current()->nice = nice;
+  thread_priority_mlfqs_update(thread_current(), NULL);
+  thread_yield();
 }
 
 /* Returns the current thread's nice value. */
 int thread_get_nice(void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int thread_get_load_avg(void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return FROM_FP_TO_ROUNDED_INT(FP_INT_MULT(100, mlfqs_load_avg));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return FROM_FP_TO_ROUNDED_INT(100 * thread_current()->recent_cpu);
 }
 
 /* Advanced Scheduler Functions
