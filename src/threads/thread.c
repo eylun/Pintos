@@ -361,28 +361,31 @@ void thread_set_priority(int new_priority)
   {
     return;
   }
+
+  /* Case when NEW_PRIORITY is greater than the current thread's PRIORITY and INITIAL_PRIORITY */
   if (new_priority > thread_current()->priority && new_priority > thread_current()->initial_priority)
   {
     thread_current()->priority = new_priority;
   }
+  /* Case when NEW_PRIORITY is lower than either current thread's PRIORITY or INITIAL_PRIORITY */
   else
   {
-    // wan sze feels like it's missing something
-    // yufeng didn't think this would work at all
-    // i want to die
+    /* Case when current thread holds no locks */
     if (list_empty(&thread_current()->locks_held))
     {
       thread_current()->priority = new_priority;
     }
+    /* Case when current thread holds one or more locks */
     else
     {
       list_sort(&thread_current()->locks_held, locks_priority_sort, NULL);
       struct lock *highest = list_entry(list_front(&thread_current()->locks_held), struct lock, held);
-      
+      /* Case when NEW_PRIORITY is lower than the priority of lock with highest LOCK_PRIORITY */
       if (new_priority < highest->lock_priority)
       {
         thread_current()->priority = highest->lock_priority;
       }
+      /* Case when NEW_PRIORITY is greater than or equal to the priority of lock with highest LOCK_PRIORITY */
       else
       {
         thread_current()->priority = new_priority;
