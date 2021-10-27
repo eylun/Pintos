@@ -94,7 +94,6 @@ struct thread
    /* own code */
    int initial_priority; /* initial priority of a thread */
 
-   struct list_elem sema_elem; /* list element to associate a thread w a semaphore */
    bool donated;               /* if it has received donated priority */
    struct list locks_held;     /* locks held by thread (for multiple donations) */
 

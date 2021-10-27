@@ -244,7 +244,6 @@ void lock_acquire(struct lock *lock)
       lock->lock_priority = current_thread->priority;
     }
 
-    // list_push_front(&((lock->semaphore).waiters), &(current_thread->sema_elem));
     sema_down(&lock->semaphore);
     lock->holder = current_thread;
     list_push_front(&(lock->holder->locks_held), &lock->held);
