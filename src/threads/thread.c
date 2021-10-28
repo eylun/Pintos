@@ -619,9 +619,12 @@ next_thread_to_run(void)
     return idle_thread;
   else
   {
-    /* Runs the thread with highest priority by sorting ready_list and popping the first elem */
-    list_sort(&ready_list, priority_sort, NULL);
-    return list_entry(list_pop_front(&ready_list), struct thread, elem);
+    /* Runs the thread with highest priority. */
+
+    struct thread *max = list_entry(list_min(&ready_list, priority_sort, NULL), struct thread, elem);
+    list_remove(list_min(&ready_list, priority_sort, NULL));
+
+    return max;
   }
 }
 

@@ -425,10 +425,14 @@ void cond_signal(struct condition *cond, struct lock *lock UNUSED)
 
   if (!list_empty(&cond->waiters))
   {
-    list_sort(&cond->waiters, cond_priority_sort, NULL);
+    /*list_sort(&cond->waiters, cond_priority_sort, NULL);
     sema_up(&list_entry(list_pop_front(&cond->waiters),
                         struct semaphore_elem, elem)
-                 ->semaphore);
+                 ->semaphore); */
+
+    struct semaphore_elem *max = list_entry(list_min(&cond->waiters, cond_priority_sort, NULL), struct semaphore_elem, elem);
+    list_remove(list_min(&cond->waiters, cond_priority_sort, NULL));
+    sema_up(&max->semaphore);
     thread_yield();
   }
 }
