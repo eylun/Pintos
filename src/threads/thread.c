@@ -370,7 +370,8 @@ void thread_set_priority(int new_priority)
   {
     cur->donated = true;
     struct lock *highest =
-        list_entry(list_max(&cur->locks_held, locks_priority_sort, NULL), struct lock, held);
+        list_entry(list_max(&cur->locks_held, locks_priority_sort, NULL),
+                   struct lock, held);
 
     if (new_priority < highest->lock_priority)
     {
@@ -621,8 +622,9 @@ next_thread_to_run(void)
   {
     /* Runs the thread with highest priority. */
 
-    struct thread *max = list_entry(list_max(&ready_list, priority_sort, NULL), struct thread, elem);
-    list_remove(list_max(&ready_list, priority_sort, NULL));
+    struct thread *max = list_entry(
+        list_max(&ready_list, priority_sort, NULL), struct thread, elem);
+    list_remove(&max->elem);
 
     return max;
   }
