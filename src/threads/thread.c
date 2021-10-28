@@ -369,9 +369,8 @@ void thread_set_priority(int new_priority)
   if (!list_empty(&cur->locks_held))
   {
     cur->donated = true;
-    list_sort(&cur->locks_held, locks_priority_sort, NULL);
     struct lock *highest =
-        list_entry(list_front(&cur->locks_held), struct lock, held);
+        list_entry(list_max(&cur->locks_held, locks_priority_sort, NULL), struct lock, held);
 
     if (new_priority < highest->lock_priority)
     {
