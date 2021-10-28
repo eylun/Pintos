@@ -32,7 +32,7 @@ bool lock_try_acquire(struct lock *);
 void lock_release(struct lock *);
 bool lock_held_by_current_thread(const struct lock *);
 
-// for sorting a list of locks based on priority
+/* Sorts a list of locks based on the priority of the thread holding the lock */
 bool locks_priority_sort(const struct list_elem *,
                          const struct list_elem *,
                          void *UNUSED);

@@ -215,10 +215,7 @@ tid_t thread_create(const char *name, int priority,
   /* Add to run queue. */
   thread_unblock(t);
 
-  /* own code begins */
-
   thread_yield();
-  /* own code ends */
 
   return tid;
 }
@@ -244,7 +241,7 @@ bool priority_sort(const struct list_elem *a,
 {
   struct thread *thread_a = list_entry(a, struct thread, elem);
   struct thread *thread_b = list_entry(b, struct thread, elem);
-  return thread_a->priority > thread_b->priority;
+  return thread_a->priority < thread_b->priority;
 }
 
 /* Transitions a blocked thread T to the ready-to-run state.
@@ -353,55 +350,41 @@ void thread_foreach(thread_action_func *func, void *aux)
   }
 }
 
-/* Sets the current thread's priority to NEW_PRIORITY. */
+/* Sets the current thread's INITIAL_PRIORITY to NEW_PRIORITY.
+   If the thread holds a lock that has a higher LOCK_PRIORITY than
+   NEW_PRIORITY, the thread's PRIORITY is set to the lock's LOCK_PRIORITY.
+   Otherwise, the thread's PRIORITY is set to NEW_PRIORITY */
 void thread_set_priority(int new_priority)
 {
-  /* When mlfqs flag is provided, threads_set_priority has to be disabled */
+  /* When mlfqs flag is provided, thread_set_priority() has to be disabled */
   if (thread_mlfqs)
   {
     return;
   }
+  struct thread *cur = thread_current();
+  cur->initial_priority = new_priority;
+  cur->priority = new_priority;
+  cur->donated = false;
   enum intr_level old_level = intr_disable();
-  if (new_priority > thread_current()->priority && new_priority > thread_current()->initial_priority)
+  if (!list_empty(&cur->locks_held))
   {
-    thread_current()->priority = new_priority;
-  }
-  else
-  {
-    // wan sze feels like it's missing something
-    // yufeng didn't think this would work at all
-    // i want to die
-    if (list_empty(&thread_current()->locks_held))
-    {
-      thread_current()->priority = new_priority;
-    }
-    else
-    {
-      list_sort(&thread_current()->locks_held, locks_priority_sort, NULL);
-      struct lock *highest = list_entry(list_front(&thread_current()->locks_held), struct lock, held);
+    cur->donated = true;
+    struct lock *highest =
+        list_entry(list_max(&cur->locks_held, locks_priority_sort, NULL),
+                   struct lock, held);
 
-      if (new_priority < highest->lock_priority)
-      {
-        thread_current()->priority = highest->lock_priority;
-      }
-      else
-      {
-        thread_current()->priority = new_priority;
-      }
+    if (new_priority < highest->lock_priority)
+    {
+      cur->priority = highest->lock_priority;
     }
-    thread_current()->donated = true;
   }
-  thread_current()->initial_priority = new_priority;
   intr_set_level(old_level);
   thread_yield();
 }
 
-/* Returns the current thread's priority. */
+/* Returns the current thread's PRIORITY. */
 int thread_get_priority(void)
 {
-  /*
-  printf("Current running thread id: %d\n", thread_current()->tid);
-  */
   return thread_current()->priority;
 }
 
@@ -638,9 +621,13 @@ next_thread_to_run(void)
     return idle_thread;
   else
   {
-    /* Runs the thread with highest priority by sorting ready_list and popping the first elem */
-    list_sort(&ready_list, priority_sort, NULL);
-    return list_entry(list_pop_front(&ready_list), struct thread, elem);
+    /* Runs the thread with highest priority. */
+
+    struct thread *max = list_entry(
+        list_max(&ready_list, priority_sort, NULL), struct thread, elem);
+    list_remove(&max->elem);
+
+    return max;
   }
 }
 

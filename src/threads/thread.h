@@ -90,16 +90,10 @@ struct thread
    int priority;               /* Priority. */
    struct list_elem allelem;   /* List element for all threads list. */
    struct list_elem sleepelem; /* List element for sleeping threads list. */
-
-   /* own code */
-   int initial_priority; /* initial priority of a thread */
-
-   struct list_elem sema_elem; /* list element to associate a thread w a semaphore */
-   bool donated;               /* if it has received donated priority */
-   struct list locks_held;     /* locks held by thread (for multiple donations) */
-
-   struct thread *blocked_by;  /* thread which is blocking this thread (for nested donations) */
-   /* end of code */
+   int initial_priority;       /* Initial priority of a thread. */
+   bool donated;               /* If the thread has received donated priority. */
+   struct list locks_held;     /* Locks held by the thread. (For multiple donations) */
+   struct thread *blocked_by;  /* Thread blocking this thread. (For nested donations) */
 
    /* Member for implementing timer_sleep. */
    int64_t sleep; /* Sleeps until this tick */
