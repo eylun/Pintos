@@ -241,7 +241,7 @@ bool priority_sort(const struct list_elem *a,
 {
   struct thread *thread_a = list_entry(a, struct thread, elem);
   struct thread *thread_b = list_entry(b, struct thread, elem);
-  return thread_a->priority > thread_b->priority;
+  return thread_a->priority < thread_b->priority;
 }
 
 /* Transitions a blocked thread T to the ready-to-run state.
@@ -621,8 +621,8 @@ next_thread_to_run(void)
   {
     /* Runs the thread with highest priority. */
 
-    struct thread *max = list_entry(list_min(&ready_list, priority_sort, NULL), struct thread, elem);
-    list_remove(list_min(&ready_list, priority_sort, NULL));
+    struct thread *max = list_entry(list_max(&ready_list, priority_sort, NULL), struct thread, elem);
+    list_remove(list_max(&ready_list, priority_sort, NULL));
 
     return max;
   }
