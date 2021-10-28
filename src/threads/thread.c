@@ -362,13 +362,13 @@ void thread_set_priority(int new_priority)
     return;
   }
   struct thread *cur = thread_current();
-  /* DONATED is set to TRUE since PRIORITY is modified. */
-  cur->donated = list_empty(&cur->locks_held) ? false : true;
   cur->initial_priority = new_priority;
   cur->priority = new_priority;
+  cur->donated = false;
 
   if (!list_empty(&cur->locks_held))
   {
+    cur->donated = true;
     list_sort(&cur->locks_held, locks_priority_sort, NULL);
     struct lock *highest =
         list_entry(list_front(&cur->locks_held), struct lock, held);
