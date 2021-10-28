@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -98,7 +99,9 @@ struct thread
    bool donated;               /* if it has received donated priority */
    struct list locks_held;     /* locks held by thread (for multiple donations) */
 
-   struct thread *blocked_by;  /* thread which is blocking this thread (for nested donations) */
+   struct thread *blocked_by; /* thread which is blocking this thread (for nested donations) */
+
+   struct lock thread_lock; /* lock for modifying thread priority */
    /* end of code */
 
    /* Member for implementing timer_sleep. */

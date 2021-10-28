@@ -237,6 +237,8 @@ void lock_acquire(struct lock *lock)
           blocker->priority = blocked->priority;
           blocker->donated = true;
         }
+        lock_acquire(&blocker->thread_lock);
+        lock_release(&blocker->thread_lock);
         blocker = blocker->blocked_by;
       }
 

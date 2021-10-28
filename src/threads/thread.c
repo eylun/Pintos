@@ -361,6 +361,9 @@ void thread_set_priority(int new_priority)
   {
     return;
   }
+
+  lock_acquire(&thread_current()->thread_lock);
+
   if (new_priority > thread_current()->priority && new_priority > thread_current()->initial_priority)
   {
     thread_current()->priority = new_priority;
@@ -378,7 +381,7 @@ void thread_set_priority(int new_priority)
     {
       list_sort(&thread_current()->locks_held, locks_priority_sort, NULL);
       struct lock *highest = list_entry(list_front(&thread_current()->locks_held), struct lock, held);
-      
+
       if (new_priority < highest->lock_priority)
       {
         thread_current()->priority = highest->lock_priority;
@@ -390,7 +393,11 @@ void thread_set_priority(int new_priority)
     }
     thread_current()->donated = true;
   }
+
   thread_current()->initial_priority = new_priority;
+
+  lock_release(&thread_current()->thread_lock);
+
   thread_yield();
 }
 
@@ -582,6 +589,7 @@ init_thread(struct thread *t, const char *name, int priority)
   t->initial_priority = priority;
   t->donated = false;
   t->blocked_by = NULL;
+  lock_init(&t->thread_lock);
 
   t->magic = THREAD_MAGIC;
   list_init(&t->locks_held);
