@@ -120,7 +120,7 @@ void sema_up(struct semaphore *sema)
   sema->value++;
   intr_set_level(old_level);
 
-  /* Checks priority and calls thread_yield(). If called in an interrupt context, 
+  /* Checks priority and calls thread_yield(). If called in an interrupt context,
      only yields upon return. */
   if (intr_context())
   {
@@ -206,33 +206,33 @@ void lock_acquire(struct lock *lock)
   ASSERT(!intr_context());
   ASSERT(!lock_held_by_current_thread(lock));
 
-  struct thread *current_thread, *lock_holder;
-  current_thread = thread_current();
+  struct thread *cur, *lock_holder;
+  cur = thread_current();
   lock_holder = lock->holder;
 
   /* Case when no thread is holding the lock. */
   if (lock_holder == NULL)
   {
-    lock->holder = current_thread;
+    lock->holder = cur;
     sema_down(&lock->semaphore);
     list_push_front(&(lock->holder->locks_held), &lock->held);
-    lock->lock_priority = current_thread->priority;
+    lock->lock_priority = cur->priority;
   }
   /* Case when a thread is already holding the lock. */
   else
   {
-    /* Case when current thread has a higher priority 
-       than the thread holding the lock. 
-       Donates the current thread's priority to the 
-       thread holding the lock. 
+    /* Case when current thread has a higher priority
+       than the thread holding the lock.
+       Donates the current thread's priority to the
+       thread holding the lock.
        Repeats if the thread holding the lock is blocked
        by another thread.*/
-    if (current_thread->priority > lock_holder->priority)
+    if (cur->priority > lock_holder->priority)
     {
-      current_thread->blocked_by = lock_holder;
+      cur->blocked_by = lock_holder;
 
       struct thread *blocker = lock_holder;
-      struct thread *blocked = current_thread;
+      struct thread *blocked = cur;
 
       while (!(blocker == NULL))
       {
@@ -244,11 +244,11 @@ void lock_acquire(struct lock *lock)
         blocker = blocker->blocked_by;
       }
 
-      lock->lock_priority = current_thread->priority;
+      lock->lock_priority = cur->priority;
     }
 
     sema_down(&lock->semaphore);
-    lock->holder = current_thread;
+    lock->holder = cur;
     list_push_front(&(lock->holder->locks_held), &lock->held);
 
     /* Sorts semaphore waiters and get the highest priority. */
@@ -307,31 +307,31 @@ void lock_release(struct lock *lock)
   lock->holder = NULL;
   list_remove(&lock->held);
 
-  struct thread *current_thread = thread_current();
+  struct thread *cur = thread_current();
 
   /* Reverts priority if donation has occured */
-  if (current_thread->donated && !list_empty(&lock->semaphore.waiters))
+  if (cur->donated && !list_empty(&lock->semaphore.waiters))
   {
-    if (list_empty(&current_thread->locks_held))
+    if (list_empty(&cur->locks_held))
     {
-      /* Case where the current thread holds no lock. 
+      /* Case where the current thread holds no lock.
          Reverts to initial_priority. */
-      current_thread->priority = current_thread->initial_priority;
+      cur->priority = cur->initial_priority;
     }
     else
     {
       /* Case where the current thread holds one or more locks.
          Gets the highest priority from locks held by the current thread. */
-      list_sort(&current_thread->locks_held, locks_priority_sort, NULL);
-      current_thread->priority = list_entry(list_front(&current_thread->locks_held),
-                                            struct lock, held)
-                                     ->lock_priority;
+      list_sort(&cur->locks_held, locks_priority_sort, NULL);
+      cur->priority = list_entry(list_front(&cur->locks_held),
+                                 struct lock, held)
+                          ->lock_priority;
 
-      /* Reverts back to initial_priority if initial priority is 
+      /* Reverts back to initial_priority if initial priority is
          higher than highest priority of locks held by current thread. */
-      if (current_thread->initial_priority > current_thread->priority)
+      if (cur->initial_priority > cur->priority)
       {
-        current_thread->priority = current_thread->initial_priority;
+        cur->priority = cur->initial_priority;
       }
     }
   }
