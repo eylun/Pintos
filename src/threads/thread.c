@@ -361,6 +361,7 @@ void thread_set_priority(int new_priority)
   {
     return;
   }
+  enum intr_level old_level = intr_disable();
   if (new_priority > thread_current()->priority && new_priority > thread_current()->initial_priority)
   {
     thread_current()->priority = new_priority;
@@ -378,7 +379,7 @@ void thread_set_priority(int new_priority)
     {
       list_sort(&thread_current()->locks_held, locks_priority_sort, NULL);
       struct lock *highest = list_entry(list_front(&thread_current()->locks_held), struct lock, held);
-      
+
       if (new_priority < highest->lock_priority)
       {
         thread_current()->priority = highest->lock_priority;
@@ -391,6 +392,7 @@ void thread_set_priority(int new_priority)
     thread_current()->donated = true;
   }
   thread_current()->initial_priority = new_priority;
+  intr_set_level(old_level);
   thread_yield();
 }
 
