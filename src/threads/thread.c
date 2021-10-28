@@ -365,7 +365,7 @@ void thread_set_priority(int new_priority)
   cur->initial_priority = new_priority;
   cur->priority = new_priority;
   cur->donated = false;
-
+  enum intr_level old_level = intr_disable();
   if (!list_empty(&cur->locks_held))
   {
     cur->donated = true;
@@ -378,6 +378,7 @@ void thread_set_priority(int new_priority)
       cur->priority = highest->lock_priority;
     }
   }
+  intr_set_level(old_level);
   thread_yield();
 }
 
