@@ -105,13 +105,13 @@ bool sema_try_down(struct semaphore *sema)
 void sema_up(struct semaphore *sema)
 {
   enum intr_level old_level;
-
+  struct thread *max = NULL;
   ASSERT(sema != NULL);
 
   old_level = intr_disable();
   if (!list_empty(&sema->waiters))
   {
-    struct thread *max = list_entry(
+    max = list_entry(
         list_max(&sema->waiters, priority_sort, NULL), struct thread, elem);
     list_remove(&max->elem);
     thread_unblock(max);
@@ -125,7 +125,7 @@ void sema_up(struct semaphore *sema)
   {
     intr_yield_on_return();
   }
-  else
+  else if (max && max->priority > thread_current()->priority)
   {
     thread_yield();
   }
