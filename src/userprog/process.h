@@ -16,8 +16,8 @@ struct argument {
   void *stack_addr;      /* memory of where the argument is stored for stack */
 };
 struct setup_data {
-  struct list argv;       /* list of arguments */
-  int argc;               /* number of arguments */
+  int argc;              /* number of arguments */
+  struct list argv;      /* list of arguments */
 };
 
 /* Structure of a process, each thread will have one of these if a process is 

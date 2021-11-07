@@ -154,9 +154,17 @@ static void sys_read (struct intr_frame *f) {
 }
 
 static void sys_write (struct intr_frame *f) {
-  printf("Open Write\n");
   /* Write returns an int value */
-  f->eax = 1;
+  int *esp = f->esp;
+  int fd = *(esp + 1);
+  const void *buffer = (void *) *(esp + 2);
+  unsigned size = *(esp + 3);
+  int ret;
+  if (fd == 1) {
+    putbuf(buffer, size);
+    ret = size;
+  }
+  f->eax = ret;
 }
 
 static void sys_seek (struct intr_frame *f) {

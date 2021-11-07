@@ -51,7 +51,6 @@ process_execute (const char *file_name)
     palloc_free_page (page_start);
     return TID_ERROR;
   }
-
   /* Set the memory of the page at pointer 'fn_copy' to point to
      a struct setup_data */
   struct setup_data *setup = fn_copy;
@@ -59,6 +58,7 @@ process_execute (const char *file_name)
   /* Increment the fn_copy pointer to move past setup_data in the page */
   list_init(&setup->argv);
   setup->argc = 0;
+
   if (!(fn_copy = increment_page_ptr(fn_copy, sizeof(struct setup_data)))) {
     palloc_free_page(page_start);
     return TID_ERROR;
@@ -86,7 +86,7 @@ process_execute (const char *file_name)
      with '\0' characters because of strtok_r. */
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, page_start);
+  tid = thread_create (page_start, PRI_DEFAULT, start_process, setup);
   if (tid == TID_ERROR)
     palloc_free_page (page_start); 
   return tid;
@@ -99,7 +99,7 @@ void *increment_page_ptr(void *curr, int size) {
   void *incremented = curr + size;
   /* IF new pointer is within limits of page boundary, return pointer,
      otherwise, return NULL. */
-  return incremented >= pg_round_down(curr) && incremented <= pg_round_up(curr)
+  return incremented <= pg_round_down(curr) + PGSIZE
     ? incremented : NULL;
 }
 
@@ -108,13 +108,13 @@ void *increment_page_ptr(void *curr, int size) {
 static void
 start_process (void *page)
 {
-  /* file_name_ is a page that points to a struct setup_data.
-     After struct setup_data, file_name_ stores the list elements
+  /* page is a page that points to a struct setup_data.
+     After struct setup_data, the page stores the list elements
      of setup_data's argv list
       ___________________________
      | file_name  ...........\0  |
      |___________________________|
-     | struct setup_data         |
+     | struct setup_data         | <- page points here
      | ..........                |
      |___________________________|
      | struct argument           |
@@ -127,9 +127,7 @@ start_process (void *page)
      Cast file_name into a struct setup_data */
 
   /* Retrieve file_name from the top of page */
-  char *file_name = page;
-  /* Shift page to setup_data past file name */
-  page += strlen(thread_current()->name) + 1;
+  char *file_name = pg_round_down(page);
   /* Retrieve setup data from new page location */
   struct setup_data *setup = page;
   struct intr_frame if_;
@@ -164,11 +162,7 @@ start_process (void *page)
       /* Store the stack address for pushing up later */
       arg->stack_addr = if_.esp;
     }
-  /* Align esp */
-  uint32_t align = (uint32_t) if_.esp % 4;
-  if (align != 0) {
-    if_.esp -= align;
-  }
+
   /* Null Pointer Sentinel */
   if_.esp -= sizeof(void *);
   memset (if_.esp, 0, sizeof(void *));
