@@ -20,6 +20,7 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static void *increment_page_ptr (void *, int);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -28,7 +29,7 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 tid_t
 process_execute (const char *file_name) 
 {
-  char *fn_copy;
+  void *fn_copy;
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
@@ -38,22 +39,99 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  /* Begin building setup_data for setting up the stack in start_process().
+     At any point where fn_copy is changed to point outside of the page, the
+     program will free the page and terminate */
+
+  /* Save the pointer to the start of the page as page_start,
+     it also happens to point to the file_name stored in the page */
+  char* page_start = fn_copy;
+  /* Increment the fn_copy pointer to move past the file_name in the page */
+  if (!(fn_copy = increment_page_ptr(fn_copy, strlen(file_name) + 1))) {
+    palloc_free_page (page_start);
+    return TID_ERROR;
+  }
+  /* Set the memory of the page at pointer 'fn_copy' to point to
+     a struct setup_data */
+  struct setup_data *setup = fn_copy;
+
+  /* Increment the fn_copy pointer to move past setup_data in the page */
+  list_init(&setup->argv);
+  setup->argc = 0;
+
+  if (!(fn_copy = increment_page_ptr(fn_copy, sizeof(struct setup_data)))) {
+    palloc_free_page(page_start);
+    return TID_ERROR;
+  }
+
+  /* Convert the command arguments into tokens using strtok_r */
+  char *token, *save_ptr;
+  struct argument *arg;
+  for (token = strtok_r(page_start, " ", &save_ptr); token;
+  token = strtok_r(NULL, " ", &save_ptr)) {
+    /* Set current value of fn_copy to point to a instance of struct argument */
+    arg = fn_copy;
+    arg->arg = token;
+    /* Push the argument to the front of setup_data's argv, stack-style */
+    list_push_front(&setup->argv, &arg->elem);
+    /* Increment the fn_copy pointer to move past argument in the page */
+    if (!(fn_copy = increment_page_ptr(fn_copy, sizeof(struct argument)))) {
+      palloc_free_page(page_start);
+      return TID_ERROR;
+    }
+    setup->argc++;
+  }
+  /* At this point, file_name is still intact with no changes.
+     However, the copy of file_name in the page has all the spaces replaced
+     with '\0' characters because of strtok_r. */
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (page_start, PRI_DEFAULT, start_process, setup);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+    palloc_free_page (page_start); 
   return tid;
+}
+
+/* Check if newly added pointer will be within limits of page boundary.
+   This is to catch situations where there is overflow in the page,
+   (or underflow, somehow) */
+void *increment_page_ptr(void *curr, int size) {
+  void *incremented = curr + size;
+  /* IF new pointer is within limits of page boundary, return pointer,
+     otherwise, return NULL. */
+  return incremented <= pg_round_down(curr) + PGSIZE
+    ? incremented : NULL;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *page)
 {
-  char *file_name = file_name_;
+  /* page is a page that points to a struct setup_data.
+     After struct setup_data, the page stores the list elements
+     of setup_data's argv list
+      ___________________________
+     | file_name  ...........\0  |
+     |___________________________|
+     | struct setup_data         | <- page points here
+     | ..........                |
+     |___________________________|
+     | struct argument           |
+     |___________________________|
+     | struct argument           |
+     |___________________________|
+     |...                        |
+     |...                        |
+     |___________________________|
+     Cast file_name into a struct setup_data */
+
+  /* Retrieve file_name from the top of page */
+  char *file_name = pg_round_down(page);
+  /* Retrieve setup data from new page location */
+  struct setup_data *setup = page;
   struct intr_frame if_;
   bool success;
-
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -62,9 +140,58 @@ start_process (void *file_name_)
   success = load (file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-  palloc_free_page (file_name);
-  if (!success) 
+  if (!success) {
+    palloc_free_page (file_name);
     thread_exit ();
+  }
+
+  int arg_len;
+  struct list_elem *e;
+  struct argument *arg;
+
+  /* Begin setting up stack
+     Loop through the argv list from start to end
+     Since arguments were pushed from the front, the last argument
+     will be the first list element */
+  for (e = list_begin(&setup->argv);
+    e != list_end(&setup->argv); e = list_next(e)) {
+      arg = list_entry(e, struct argument, elem);
+      arg_len = strlen(arg->arg) + 1;
+      if_.esp -= arg_len;
+      strlcpy(if_.esp, arg->arg, arg_len);
+      /* Store the stack address for pushing up later */
+      arg->stack_addr = if_.esp;
+    }
+
+  /* Null Pointer Sentinel */
+  if_.esp -= sizeof(void *);
+  memset (if_.esp, 0, sizeof(void *));
+  /* Push argument pointers */
+  /* Reset index back to argc - 1 for iteration */
+  
+  /* Push up argument stack addresses */
+  for (e = list_begin(&setup->argv);
+    e != list_end(&setup->argv); e = list_next(e)) {
+      arg = list_entry(e, struct argument, elem);
+      if_.esp -= sizeof(void *);
+      memcpy(if_.esp, &arg->stack_addr, sizeof(void *));
+    }
+  
+  /* Push up argv */
+  void *prev_esp = if_.esp;
+  if_.esp -= sizeof(void *);
+  memcpy (if_.esp, &prev_esp, sizeof(void *));
+
+  /* Push up argc */
+  if_.esp -= sizeof(int);
+  memcpy(if_.esp, &setup->argc, sizeof(int));
+
+  /* Push up fake return address */
+  if_.esp -= sizeof(void *);
+  memset(if_.esp, 0, sizeof(void *));
+
+  /* Free page after pushing everything onto the stack */
+  palloc_free_page(file_name);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -88,7 +215,8 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  return -1;
+  // Temporary infinite loop
+  for (;;);
 }
 
 /* Free the current process's resources. */
