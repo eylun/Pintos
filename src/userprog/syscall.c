@@ -1,4 +1,6 @@
 #include "userprog/syscall.h"
+#include "userprog/process.h"
+#include "userprog/pagedir.h"
 #include "devices/shutdown.h"
 #include <stdio.h>
 #include <syscall-nr.h>
@@ -101,13 +103,12 @@ static void sys_halt(struct intr_frame *f UNUSED) {
 
 static void sys_exit(struct intr_frame *f) {
   int *status = f->esp + 1;
-  printf("Exit Call\n");
   exit(*status);
   /* Exit returns nothing */
 }
 
 static void exit(int status) {
-  printf("exiting...\n");
+  thread_current()->process->exit_code = status;
   thread_exit();
 }
 

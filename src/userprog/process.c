@@ -15,6 +15,7 @@
 #include "threads/init.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
@@ -63,7 +64,6 @@ process_execute (const char *file_name)
     palloc_free_page(page_start);
     return TID_ERROR;
   }
-
   /* Convert the command arguments into tokens using strtok_r */
   char *token, *save_ptr;
   struct argument *arg;
@@ -84,11 +84,24 @@ process_execute (const char *file_name)
   /* At this point, file_name is still intact with no changes.
      However, the copy of file_name in the page has all the spaces replaced
      with '\0' characters because of strtok_r. */
+  /* Create process struct
+     Process structure is created here because we need to know what is
+     the parent id. */
+  struct process *p = calloc(1, sizeof(struct process));
+  struct process **process_ptr = fn_copy;
+  /* Push the pointer of this process onto the page so it can be
+     deferenced in start_process(). */
+  *process_ptr = p;
+  if (!(fn_copy = increment_page_ptr(fn_copy, sizeof(void *)))) {
+      palloc_free_page(page_start);
+      return TID_ERROR;
+  }
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (page_start, PRI_DEFAULT, start_process, setup);
   if (tid == TID_ERROR)
     palloc_free_page (page_start); 
+  p->pid = tid;
   return tid;
 }
 
@@ -190,7 +203,10 @@ start_process (void *page)
   if_.esp -= sizeof(void *);
   memset(if_.esp, 0, sizeof(void *));
 
-  /* Free page after pushing everything onto the stack */
+  /* Acquire struct process after pushing everything onto the stack */
+  struct process **p = page + 
+    sizeof(struct setup_data) + setup->argc * sizeof(struct argument);
+  thread_current()->process = *p;
   palloc_free_page(file_name);
 
   /* Start the user process by simulating a return from an
@@ -216,6 +232,8 @@ int
 process_wait (tid_t child_tid UNUSED) 
 {
   // Temporary infinite loop
+  // acquire the child's lock
+  // something calls cond_wait
   for (;;);
 }
 
@@ -225,6 +243,14 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  /* Check if thread_exitting is running a user process
+     If thread->process is NULL, it means there is no user process */
+  if (cur->process) {
+    printf("%s: exit (%d)\n", cur->name, cur->process->exit_code);
+  }
+
+  // Somewhere here we cond_signal
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
