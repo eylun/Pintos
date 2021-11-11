@@ -92,6 +92,11 @@ tid_t process_execute(const char *file_name)
      the parent id. */
   struct process *p = calloc(1, sizeof(struct process));
   struct process **process_ptr = fn_copy;
+
+  /* Initialize process wait_cond and wait_lock */
+  cond_init(&p->wait_cond);
+  lock_init(&p->wait_lock);
+
   /* Push the pointer of this process onto the page so it can be
      deferenced in start_process(). */
   *process_ptr = p;
@@ -106,6 +111,10 @@ tid_t process_execute(const char *file_name)
   if (tid == TID_ERROR)
     palloc_free_page(page_start);
   p->pid = tid;
+
+  /* Add process child_elem to thread's list of child_elems */
+  list_push_back(&thread_current()->child_elems, &p->child_elem);
+
   return tid;
 }
 
@@ -243,10 +252,10 @@ start_process(void *page)
 int process_wait(tid_t child_tid UNUSED)
 {
   struct process *process = thread_current()->process;
-  struct list_elem *child_elem = list_begin(&process->child_elem);
+  struct list_elem *child_elem = list_begin(&thread_current()->child_elems);
 
   /* Locate child_tid in thread's children */
-  for (child_elem; child_elem != list_end(&process->child_elem); child_elem = list_next(child_elem))
+  for (child_elem; child_elem != list_end(&thread_current()->child_elems); child_elem = list_next(child_elem))
   {
     struct process *child_process = list_entry(child_elem, struct process, child_elem);
 
@@ -296,6 +305,9 @@ void process_exit(void)
   if (cur->process)
   {
     printf("%s: exit (%d)\n", cur->name, cur->process->exit_code);
+    lock_acquire(&cur->process->wait_lock);
+    cond_signal(&cur->process->wait_cond, &cur->process->wait_lock);
+    lock_release(&cur->process->wait_lock);
   }
 
   // Somewhere here we cond_signal
