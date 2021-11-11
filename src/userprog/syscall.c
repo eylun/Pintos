@@ -54,9 +54,29 @@ static const handler syscalls[] = {
 static const int sysarguments[] = {
     0, 1, 1, 1, 2, 1, 1, 1, 3, 3, 2, 1, 1};
 
+<<<<<<< HEAD
 void syscall_init(void)
 {
   intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
+=======
+static struct lock filesys_lock;
+
+void start_filesys_access(void)
+{
+  lock_acquire(&filesys_lock);
+}
+
+void end_filesys_access(void)
+{
+  lock_release(&filesys_lock);
+}
+
+void
+syscall_init (void) 
+{
+  lock_init(&filesys_lock);
+  intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+>>>>>>> feat: added lock for accessing the filesystem and functions to acquire and release the lock
 }
 
 static void
@@ -158,20 +178,43 @@ static void sys_create(struct intr_frame *f)
 {
   printf("Create Call\n");
   /* Create returns a bool value */
-  f->eax = true;
+  int *esp = f->esp;
+  const char *file = *(esp + 1);
+  unsigned initial_size = *(esp + 2);
+  bool ret;
+
+  start_filesys_access();
+
+  ret = filesys_create(file, initial_size);
+
+  end_filesys_access();
+
+  f->eax = ret;
 }
 
 static void sys_remove(struct intr_frame *f)
 {
   printf("Remove Call\n");
   /* Remove returns a bool value */
-  f->eax = true;
+  int *esp = f->esp;
+  const char *file = *(esp + 1);
+  bool ret;
+
+  start_filesys_access();
+
+  ret = filesys_remove(file);
+
+  end_filesys_access();
+
+  f->eax = ret;
 }
 
 static void sys_open(struct intr_frame *f)
 {
   printf("Open Call\n");
   /* Open returns an int value */
+  int *esp = f->esp;
+  int fd = *(esp + 1);
   f->eax = 1;
 }
 
