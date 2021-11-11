@@ -93,7 +93,7 @@ static bool validate_memory(void *pointer, int arguments)
   {
     /* Check if pointers are user vaddrs,
        and are on the page of the current thread */
-    if (!is_user_vaddr(pointer + count) ||
+    if (!is_user_vaddr(pointer + count) &&
         !pagedir_get_page(thread_current()->pagedir, pointer + count))
     {
       return false;
@@ -109,8 +109,10 @@ static void sys_halt(struct intr_frame *f UNUSED)
 
 static void sys_exit(struct intr_frame *f)
 {
-  int *status = f->esp + 1;
-  exit(*status);
+  printf("%x...\n", *(uint32_t *)f->esp << 4);
+  hex_dump(f->esp, f->esp, 100, true);
+  int status = *(uint32_t *)(f->esp + 1);
+  exit(status);
   /* Exit returns nothing */
 }
 
@@ -122,7 +124,6 @@ static void exit(int status)
 
 static void sys_exec(struct intr_frame *f)
 {
-  printf("Exec Call\n");
   /* Exec returns a pid_t value */
   int *esp = f->esp;
   const char *cmd_line = *(esp + 1);
@@ -131,7 +132,6 @@ static void sys_exec(struct intr_frame *f)
 
 static void sys_wait(struct intr_frame *f)
 {
-  printf("Wait Call\n");
   /* Wait returns an int value */
   int *esp = f->esp;
   pid_t pid = *(esp + 1);

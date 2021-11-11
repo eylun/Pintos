@@ -304,7 +304,7 @@ void process_exit(void)
      If thread->process is NULL, it means there is no user process */
   if (cur->process)
   {
-    printf("%s: exit (%d)\n", cur->name, cur->process->exit_code);
+    printf("%s: exit(%d)\n", cur->name, cur->process->exit_code);
     lock_acquire(&cur->process->wait_lock);
     cond_signal(&cur->process->wait_cond, &cur->process->wait_lock);
     lock_release(&cur->process->wait_lock);
