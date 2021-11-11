@@ -575,6 +575,11 @@ init_thread(struct thread *t, const char *name, int priority)
   list_push_back(&all_list, &t->allelem);
   intr_set_level(old_level);
 
+/* Initiliazing process structure */
+#ifdef USERPROG
+  list_init(&t->child_elems);
+#endif
+
   /* When mlfqs flag is provided, initialize niceness and recent_cpu.
      The initial thread will start with a nice value of 0.
      The initial thread will start with a recent_cpu value of 0.
