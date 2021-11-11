@@ -242,14 +242,6 @@ start_process(void *page)
  * For now, it does nothing. */
 int process_wait(tid_t child_tid UNUSED)
 {
-  /*
-  // Temporary infinite loop
-  // acquire the child's lock
-  // something calls cond_wait
-  for (;;)
-    ;
-    */
-
   struct process *process = thread_current()->process;
   struct list_elem *child_elem = list_begin(&process->child_elem);
 
@@ -263,9 +255,14 @@ int process_wait(tid_t child_tid UNUSED)
     {
       lock_acquire(&child_process->wait_lock);
 
-      // NOT TOO SURE: include check if process has terminated?
-      // Is there a scenario where lock_acquire may have blocked the thread & deleted it?
       cond_wait(&child_process->wait_cond, &child_process->wait_lock);
+
+      if (child_process->terminated)
+      {
+        /* Note: may need a custom function for freeing child_process */
+        free(child_process);
+        return -1;
+      }
 
       /* Set child_process is_waited_on to True */
       child_process->is_waited_on = true;
