@@ -186,20 +186,21 @@ start_process(void *page)
   /* Acquire struct process after pushing everything onto the stack */
   struct process **p = page +
                        sizeof(struct setup_data) + setup->argc * sizeof(struct argument);
-  thread_current()->process = *p;
 
-  struct process *process = thread_current()->process;
-  process->load_success = success;
-  sema_up(&process->wait_sema);
+  // TODO: HOW TO CHECK IF PROCESS IS VALID (exec-missing.c)
+  struct process *process_check = *p;
+  process_check->load_success = success;
+  sema_up(&process_check->wait_sema);
 
   /* If load failed, quit. */
   if (!success)
   {
     /* Set thread's child process exit code to TID_ERROR */
     palloc_free_page(file_name);
-    thread_current()->process = NULL;
     thread_exit();
   }
+
+  thread_current()->process = process_check;
 
   int arg_len;
   struct list_elem *e;
