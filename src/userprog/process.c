@@ -93,9 +93,8 @@ tid_t process_execute(const char *file_name)
   struct process *p = calloc(1, sizeof(struct process));
   struct process **process_ptr = fn_copy;
 
-  /* Initialize process wait_cond and wait_lock */
-  cond_init(&p->wait_cond);
-  lock_init(&p->wait_lock);
+  /* Initialize process semaphore */
+  sema_init(&p->wait_sema, 0);
 
   /* Push the pointer of this process onto the page so it can be
      deferenced in start_process(). */
@@ -116,9 +115,7 @@ tid_t process_execute(const char *file_name)
   }
   else
   {
-    lock_acquire(&p->wait_lock);
-    cond_wait(&p->wait_cond, &p->wait_lock);
-    lock_release(&p->wait_lock);
+    sema_down(&p->wait_sema);
 
     /* If process not loaded, free process and return TID_ERROR */
     if (!p->load_success)
@@ -185,12 +182,15 @@ start_process(void *page)
 
   /* Signal the parent process if properly executed */
   success = load(file_name, &if_.eip, &if_.esp);
-  struct process *process = thread_current()->process;
 
-  lock_acquire(&process->wait_lock);
+  /* Acquire struct process after pushing everything onto the stack */
+  struct process **p = page +
+                       sizeof(struct setup_data) + setup->argc * sizeof(struct argument);
+  thread_current()->process = *p;
+
+  struct process *process = thread_current()->process;
   process->load_success = success;
-  cond_signal(&process->wait_cond, &process->wait_lock);
-  lock_release(&process->wait_lock);
+  sema_up(&process->wait_sema);
 
   /* If load failed, quit. */
   if (!success)
@@ -247,10 +247,6 @@ start_process(void *page)
   if_.esp -= sizeof(void *);
   memset(if_.esp, 0, sizeof(void *));
 
-  /* Acquire struct process after pushing everything onto the stack */
-  struct process **p = page +
-                       sizeof(struct setup_data) + setup->argc * sizeof(struct argument);
-  thread_current()->process = *p;
   palloc_free_page(file_name);
 
   /* Start the user process by simulating a return from an
@@ -288,7 +284,6 @@ int process_wait(tid_t child_tid UNUSED)
     /* Child process acquires lock */
     if (child_process->pid == child_tid && !child_process->is_waited_on)
     {
-      lock_acquire(&child_process->wait_lock);
 
       /* Store exit_status on the stack */
       int child_exit_code = child_process->exit_code;
@@ -301,16 +296,12 @@ int process_wait(tid_t child_tid UNUSED)
         return child_exit_code;
       }
 
-      cond_wait(&child_process->wait_cond, &child_process->wait_lock);
-
+      sema_down(&child_process->wait_sema);
       /* Set child_process is_waited_on to True */
       child_process->is_waited_on = true;
 
       /* Remove child_process from process's children list */
       list_remove(child_elem);
-
-      /* Release lock */
-      lock_release(&child_process->wait_lock);
 
       /* Free up memory */
       free(child_process);
@@ -332,9 +323,8 @@ void process_exit(void)
   if (cur->process)
   {
     printf("%s: exit(%d)\n", cur->name, cur->process->exit_code);
-    lock_acquire(&cur->process->wait_lock);
-    cond_signal(&cur->process->wait_cond, &cur->process->wait_lock);
-    lock_release(&cur->process->wait_lock);
+    cur->process->terminated = true;
+    sema_up(&cur->process->wait_sema);
   }
 
   // Somewhere here we cond_signal
