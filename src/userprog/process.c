@@ -197,6 +197,7 @@ start_process(void *page)
   {
     /* Set thread's child process exit code to TID_ERROR */
     palloc_free_page(file_name);
+    thread_current()->process = NULL;
     thread_exit();
   }
 
