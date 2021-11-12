@@ -108,13 +108,30 @@ tid_t process_execute(const char *file_name)
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(page_start, PRI_DEFAULT, start_process, setup);
+
+  /* Check for error, if none, cond_wait */
   if (tid == TID_ERROR)
+  {
     palloc_free_page(page_start);
-  p->pid = tid;
+  }
+  else
+  {
+    lock_acquire(&p->wait_lock);
+    cond_wait(&p->wait_cond, &p->wait_lock);
+    lock_release(&p->wait_lock);
 
-  /* Add process child_elem to thread's list of child_elems */
-  list_push_back(&thread_current()->child_elems, &p->child_elem);
+    /* If process not loaded, free process and return TID_ERROR */
+    if (!p->load_success)
+    {
+      free(p);
+      return TID_ERROR;
+    }
 
+    p->pid = tid;
+
+    /* Add process child_elem to thread's list of child_elems */
+    list_push_back(&thread_current()->child_elems, &p->child_elem);
+  }
   return tid;
 }
 
@@ -165,11 +182,20 @@ start_process(void *page)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
+
+  /* Signal the parent process if properly executed */
   success = load(file_name, &if_.eip, &if_.esp);
+  struct process *process = thread_current()->process;
+
+  lock_acquire(&process->wait_lock);
+  process->load_success = success;
+  cond_signal(&process->wait_cond, &process->wait_lock);
+  lock_release(&process->wait_lock);
 
   /* If load failed, quit. */
   if (!success)
   {
+    /* Set thread's child process exit code to TID_ERROR */
     palloc_free_page(file_name);
     thread_exit();
   }
@@ -264,20 +290,21 @@ int process_wait(tid_t child_tid UNUSED)
     {
       lock_acquire(&child_process->wait_lock);
 
-      cond_wait(&child_process->wait_cond, &child_process->wait_lock);
+      /* Store exit_status on the stack */
+      int child_exit_code = child_process->exit_code;
 
       if (child_process->terminated)
       {
         /* Note: may need a custom function for freeing child_process */
+        list_remove(child_elem);
         free(child_process);
-        return -1;
+        return child_exit_code;
       }
+
+      cond_wait(&child_process->wait_cond, &child_process->wait_lock);
 
       /* Set child_process is_waited_on to True */
       child_process->is_waited_on = true;
-
-      /* Store exit_status on the stack */
-      int exit_code = child_process->exit_code;
 
       /* Remove child_process from process's children list */
       list_remove(child_elem);
@@ -288,7 +315,7 @@ int process_wait(tid_t child_tid UNUSED)
       /* Free up memory */
       free(child_process);
 
-      return exit_code;
+      return child_exit_code;
     }
   }
   return -1;
