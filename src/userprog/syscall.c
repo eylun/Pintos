@@ -93,6 +93,8 @@ static bool validate_memory(void *pointer, int arguments)
   {
     /* Check if pointers are user vaddrs,
        and are on the page of the current thread */
+    hex_dump(pointer, pointer, 100, true);
+    printf("%d, ptr: %x\n", arguments, pointer);
     if (!is_user_vaddr(pointer + count) ||
         !pagedir_get_page(thread_current()->pagedir, pointer + count))
     {
@@ -126,6 +128,8 @@ static void sys_exec(struct intr_frame *f)
   /* Exec returns a pid_t value */
   int *esp = f->esp;
   const char *cmd_line = *(esp + 1);
+  /* Check bad pointer for cmd_line variable */
+  /* test: exec-bad-ptr */
   f->eax = process_execute(cmd_line);
 }
 
