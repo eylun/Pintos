@@ -95,6 +95,7 @@ tid_t process_execute(const char *file_name)
 
   /* Initialize process semaphore */
   sema_init(&p->wait_sema, 0);
+  sema_init(&p->exec_sema, 0);
 
   /* Push the pointer of this process onto the page so it can be
      deferenced in start_process(). */
@@ -115,7 +116,7 @@ tid_t process_execute(const char *file_name)
   }
   else
   {
-    sema_down(&p->wait_sema);
+    sema_down(&p->exec_sema);
 
     /* If process not loaded, free process and return TID_ERROR */
     if (!p->load_success)
@@ -190,7 +191,7 @@ start_process(void *page)
   // TODO: HOW TO CHECK IF PROCESS IS VALID (exec-missing.c)
   struct process *process_check = *p;
   process_check->load_success = success;
-  sema_up(&process_check->wait_sema);
+  sema_up(&process_check->exec_sema);
 
   /* If load failed, quit. */
   if (!success)
@@ -273,34 +274,27 @@ start_process(void *page)
  *
  * This function will be implemented in task 2.
  * For now, it does nothing. */
-int process_wait(tid_t child_tid UNUSED)
+int process_wait(tid_t child_tid)
 {
-  struct process *process = thread_current()->process;
   struct list_elem *child_elem = list_begin(&thread_current()->child_elems);
 
   /* Locate child_tid in thread's children */
-  for (child_elem; child_elem != list_end(&thread_current()->child_elems); child_elem = list_next(child_elem))
+  for (;child_elem != list_end(&thread_current()->child_elems); child_elem = list_next(child_elem))
   {
     struct process *child_process = list_entry(child_elem, struct process, child_elem);
 
     /* Child process acquires lock */
     if (child_process->pid == child_tid && !child_process->is_waited_on)
     {
+      if (!child_process->terminated)
+      {
+        /* Set child_process is_waited_on to True */
+        child_process->is_waited_on = true;
+        sema_down(&child_process->wait_sema);
+      }
 
       /* Store exit_status on the stack */
       int child_exit_code = child_process->exit_code;
-
-      if (child_process->terminated)
-      {
-        /* Note: may need a custom function for freeing child_process */
-        list_remove(child_elem);
-        free(child_process);
-        return child_exit_code;
-      }
-
-      sema_down(&child_process->wait_sema);
-      /* Set child_process is_waited_on to True */
-      child_process->is_waited_on = true;
 
       /* Remove child_process from process's children list */
       list_remove(child_elem);

@@ -30,6 +30,7 @@ struct process
   pid_t pid;                   /* Process identification */
   int exit_code;               /* Exit code of process */
   struct semaphore wait_sema;  /* Semaphore for process */
+  struct semaphore exec_sema;
   bool load_success;           /* Set to True if this process has been successfully loaded */
   bool is_waited_on;           /* Set to True if this process is being waited on */
   bool has_parent;             /* Set to True if this process has a parent */

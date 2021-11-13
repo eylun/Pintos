@@ -4,6 +4,7 @@
 #include "devices/shutdown.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -93,8 +94,6 @@ static bool validate_memory(void *pointer, int arguments)
   {
     /* Check if pointers are user vaddrs,
        and are on the page of the current thread */
-    hex_dump(pointer, pointer, 100, true);
-    printf("%d, ptr: %x\n", arguments, pointer);
     if (!is_user_vaddr(pointer + count) ||
         !pagedir_get_page(thread_current()->pagedir, pointer + count))
     {
@@ -127,9 +126,23 @@ static void sys_exec(struct intr_frame *f)
 {
   /* Exec returns a pid_t value */
   int *esp = f->esp;
-  const char *cmd_line = *(esp + 1);
-  /* Check bad pointer for cmd_line variable */
-  /* test: exec-bad-ptr */
+  const char *cmd_line = *(const char**) (esp + 1);
+  /* Check if cmd_line string pointer is:
+     1. A valid pointer (using validate_memory)
+     2. Has a size less than or equal to a page (4,096kb)
+        Check this using strnlen(cmd_line, 4096), and use validate_memory
+        on the end of the buffer */
+
+  /* TODO: Make a buffer check function (reuse for file read/write) */
+  if (!validate_memory((void *)cmd_line, 1))
+  {
+    exit(EXIT_CODE);
+  }
+  size_t cmd_line_size = strnlen(cmd_line, PGSIZE);
+  if (!validate_memory((void *)(cmd_line + cmd_line_size), 1))
+  {
+    exit(EXIT_CODE);
+  }
   f->eax = process_execute(cmd_line);
 }
 
