@@ -334,6 +334,13 @@ void process_exit(void)
     sema_up(&cur->process->wait_sema);
   }
 
+  if (cur->file)
+  {
+    start_filesys_access();
+    file_close(cur->file);
+    end_filesys_access();
+  }
+
   // Somewhere here we cond_signal
 
   /* Destroy the current process's page directory and switch back
@@ -458,7 +465,9 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
   process_activate();
 
   /* Open executable file. */
+  start_filesys_access();
   file = filesys_open(file_name);
+  end_filesys_access();
   if (file == NULL)
   {
     printf("load: %s: open failed\n", file_name);
@@ -539,9 +548,12 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
 
   success = true;
 
+  file_deny_write(file);
 done:
   /* We arrive here whether the load is successful or not. */
-  file_close(file);
+
+  t->file = file;
+
   return success;
 }
 
