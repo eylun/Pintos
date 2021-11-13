@@ -8,6 +8,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -18,10 +19,14 @@
 #include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "lib/kernel/hash.h"
 
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
 static void *increment_page_ptr(void *, int);
+
+unsigned fd_table_hash_func (const struct hash_elem *e, void *aux);
+bool fd_table_less_func (const struct hash_elem *a, const struct hash_elem *b, void *aux);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -96,6 +101,12 @@ tid_t process_execute(const char *file_name)
   /* Initialize process semaphore */
   sema_init(&p->wait_sema, 0);
   sema_init(&p->exec_sema, 0);
+
+  /* Initialize process hash table of file descriptors */
+  hash_init(&p->fd_table, &fd_table_hash_func, &fd_table_less_func, NULL);
+
+  /* Sets the first fd to 2 since 0 and 1 are reserved for the console. */
+  p->next_fd = 2;
 
   /* Push the pointer of this process onto the page so it can be
      deferenced in start_process(). */
@@ -690,3 +701,15 @@ install_page(void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page(t->pagedir, upage) == NULL && pagedir_set_page(t->pagedir, upage, kpage, writable));
 }
+
+unsigned fd_table_hash_func (const struct hash_elem *e, void *aux UNUSED) {
+  const struct file_descriptor *file_descriptor = hash_entry (e, struct file_descriptor, hash_elem);
+  return file_descriptor->fd;
+};
+
+bool fd_table_less_func (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
+  const struct file_descriptor *file_descriptor_a = hash_entry (a, struct file_descriptor, hash_elem);
+  const struct file_descriptor *file_descriptor_b = hash_entry (b, struct file_descriptor, hash_elem);
+
+  return file_descriptor_a->fd < file_descriptor_b->fd;
+};
