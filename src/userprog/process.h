@@ -1,6 +1,7 @@
 #ifndef USERPROG_PROCESS_H
 #define USERPROG_PROCESS_H
 
+#include "threads/synch.h"
 #include "threads/thread.h"
 
 typedef int pid_t;
@@ -28,8 +29,9 @@ struct process
 {
   pid_t pid;                   /* Process identification */
   int exit_code;               /* Exit code of process */
-  struct condition wait_cond;  /* Condition used by process for process_exec() and process_wait() */
-  struct lock wait_lock;       /* Lock to accompany wait_cond */
+  struct semaphore wait_sema;  /* Semaphore for process */
+  struct semaphore exec_sema;
+  bool load_success;           /* Set to True if this process has been successfully loaded */
   bool is_waited_on;           /* Set to True if this process is being waited on */
   bool has_parent;             /* Set to True if this process has a parent */
   bool terminated;             /* Set to True if the process is dead */

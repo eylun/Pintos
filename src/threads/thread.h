@@ -109,6 +109,7 @@ struct thread
    /* Owned by userprog/process.c. */
    uint32_t *pagedir; /* Page directory. */
    struct process *process;
+   struct list child_elems; /* List for list of thread's children */
 #endif
 
    /* Owned by thread.c. */
