@@ -97,24 +97,11 @@ tid_t process_execute(const char *file_name)
   /* Sets the first fd to 2 since 0 and 1 are reserved for the console. */
   p->next_fd = 2;
 
-  /* Push the pointer of this process onto the page so it can be
-     deferenced in start_process(). */
-  *process_ptr = p;
-  if (!(fn_copy = increment_page_ptr(fn_copy, sizeof(void *))))
-  {
-    palloc_free_page(page_start);
-    return TID_ERROR;
-  }
-
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(page_start, PRI_DEFAULT, start_process, setup);
 
   /* Check for error, if none, cond_wait */
-  if (tid == TID_ERROR)
-  {
-    palloc_free_page(page_start);
-  }
-  else
+  if (tid != TID_ERROR)
   {
     sema_down(&p->exec_sema);
 
@@ -123,6 +110,7 @@ tid_t process_execute(const char *file_name)
     {
       free(p);
       free_setup(setup);
+      palloc_free_page(page_start);
       return TID_ERROR;
     }
 
@@ -131,6 +119,7 @@ tid_t process_execute(const char *file_name)
     /* Add process child_elem to thread's list of child_elems */
     list_push_back(&thread_current()->child_elems, &p->child_elem);
   }
+  palloc_free_page(page_start);
   free_setup(setup);
   return tid;
 }
