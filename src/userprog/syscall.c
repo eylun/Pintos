@@ -229,6 +229,8 @@ static void sys_open(struct intr_frame *f)
 
   end_filesys_access();
 
+  int fd = -1;
+
   if (file != NULL)
   {
     struct thread *current_thread = thread_current();
@@ -243,8 +245,10 @@ static void sys_open(struct intr_frame *f)
     descriptor->file = file;
 
     hash_insert(&current_thread->process->fd_table, &descriptor->hash_elem);
-    f->eax = descriptor->fd;
+    fd = descriptor->fd;
   }
+
+  f->eax = fd;
 }
 
 static void sys_filesize(struct intr_frame *f)
