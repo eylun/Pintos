@@ -8,6 +8,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "lib/kernel/hash.h"
 
 typedef void (*handler)(struct intr_frame *);
 
@@ -54,9 +55,23 @@ static const handler syscalls[] = {
 static const int sysarguments[] = {
     0, 1, 1, 1, 2, 1, 1, 1, 3, 3, 2, 1, 1};
 
-void syscall_init(void)
+static struct lock filesys_lock;
+
+void start_filesys_access(void)
 {
-  intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
+  lock_acquire(&filesys_lock);
+}
+
+void end_filesys_access(void)
+{
+  lock_release(&filesys_lock);
+}
+
+void
+syscall_init (void) 
+{
+  lock_init(&filesys_lock);
+  intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
 static void
@@ -101,6 +116,19 @@ static bool validate_memory(void *pointer, int arguments)
     }
   }
   return true;
+}
+
+static void validate_pointer(void *pointer) {
+  // printf("%x rubbish\n", pointer);
+  if (!pointer || !is_user_vaddr(pointer) || !pagedir_get_page(thread_current()->pagedir, pointer)) {
+    exit(EXIT_CODE);
+  }
+
+  size_t pointer_size = strnlen(pointer, PGSIZE);
+
+  if (!is_user_vaddr(pointer + pointer_size) || !pagedir_get_page(thread_current()->pagedir, pointer + pointer_size)) {
+    exit(EXIT_CODE);
+  }
 }
 
 static void sys_halt(struct intr_frame *f UNUSED)
@@ -156,37 +184,137 @@ static void sys_wait(struct intr_frame *f)
 
 static void sys_create(struct intr_frame *f)
 {
-  printf("Create Call\n");
   /* Create returns a bool value */
-  f->eax = true;
+  int *esp = f->esp;
+  const char *file = *(esp + 1);
+  unsigned initial_size = *(esp + 2);
+
+  validate_pointer(file);
+
+  start_filesys_access();
+
+  bool ret = filesys_create(file, initial_size);
+
+  end_filesys_access();
+
+  f->eax = ret;
 }
 
 static void sys_remove(struct intr_frame *f)
 {
-  printf("Remove Call\n");
   /* Remove returns a bool value */
-  f->eax = true;
+  int *esp = f->esp;
+  const char *file = *(esp + 1);
+
+  validate_pointer(file);
+  
+  start_filesys_access();
+
+  bool ret = filesys_remove(file);
+
+  end_filesys_access();
+
+  f->eax = ret;
 }
 
 static void sys_open(struct intr_frame *f)
 {
-  printf("Open Call\n");
   /* Open returns an int value */
-  f->eax = 1;
+  int *esp = f->esp;
+  const char *filename = *(esp + 1);
+
+  validate_pointer(filename);
+
+  start_filesys_access();
+
+  int fd = -1;
+  struct file *file = filesys_open (filename);
+
+  if (file != NULL) {
+    struct thread *current_thread = thread_current();
+
+    struct file_descriptor *descriptor = malloc(sizeof (struct file_descriptor));
+    if (descriptor == NULL) {
+      exit(EXIT_CODE);
+    }
+
+    descriptor->fd = (current_thread->process->next_fd)++;
+    descriptor->file = file;
+
+    hash_insert(&current_thread->process->fd_table, &descriptor->hash_elem);
+    fd = descriptor->fd;
+  }
+
+  end_filesys_access();
+  f->eax = fd;
 }
 
 static void sys_filesize(struct intr_frame *f)
 {
-  printf("Open Filesize\n");
   /* Filesize returns an int value */
-  f->eax = 1;
+  int *esp = f->esp;
+  int fd = *(esp + 1);
+
+  start_filesys_access();
+
+  int file_size = 0;
+  struct thread *current_thread = thread_current();
+
+  struct file_descriptor descriptor;
+  descriptor.fd = fd;
+
+  struct hash_elem *elem = hash_find(&current_thread->process->fd_table, &descriptor.hash_elem);
+
+  if (elem != NULL) {
+    struct file_descriptor *open_descriptor = hash_entry (elem, struct file_descriptor, hash_elem);
+    if (open_descriptor != NULL) {
+      file_size = file_length (open_descriptor->file);
+    }
+  } 
+
+  end_filesys_access();
+
+  f->eax = file_size; 
 }
 
 static void sys_read(struct intr_frame *f)
 {
-  printf("Open Read\n");
   /* Read returns an int value */
-  f->eax = 1;
+  int *esp = f->esp;
+  int fd = *(esp + 1);
+  const void *buffer = *(esp + 2);
+  unsigned size = *(esp + 3);
+
+  validate_pointer(buffer);
+  validate_pointer(buffer+size);
+
+  int ret = -1;
+
+  if (fd == 0) {
+    uint8_t value = input_getc();
+    buffer = value;
+    ret = 1;
+  } else {
+    start_filesys_access();
+
+    struct thread *current_thread = thread_current();
+
+    struct file_descriptor descriptor;
+    descriptor.fd = fd;
+
+    struct hash_elem *elem = hash_find(&current_thread->process->fd_table, &descriptor.hash_elem);
+
+    if (elem != NULL) {
+      struct file_descriptor *open_descriptor = hash_entry (elem, struct file_descriptor, hash_elem);
+      if (open_descriptor != NULL) {
+        ret = file_read(open_descriptor->file, buffer, size);
+      }
+    }
+
+    end_filesys_access();
+  }
+
+  f->eax = ret;
 }
 
 static void sys_write(struct intr_frame *f)
@@ -196,30 +324,120 @@ static void sys_write(struct intr_frame *f)
   int fd = *(esp + 1);
   const void *buffer = (void *)*(esp + 2);
   unsigned size = *(esp + 3);
-  int ret;
+
+  validate_pointer(buffer);
+  validate_pointer(buffer+size);
+
+  int ret = 0;
   if (fd == 1)
   {
     putbuf(buffer, size);
     ret = size;
+  } else {
+    start_filesys_access();
+
+    struct thread *current_thread = thread_current();
+
+    struct file_descriptor descriptor;
+    descriptor.fd = fd;
+
+    struct hash_elem *elem = hash_find(&current_thread->process->fd_table, &descriptor.hash_elem);
+
+    if (elem != NULL) {
+      struct file_descriptor *open_descriptor = hash_entry (elem, struct file_descriptor, hash_elem);
+      if (open_descriptor != NULL) {
+        ret = file_write(open_descriptor->file, buffer, size);
+      }
+    }
+
+    end_filesys_access();
   }
+
   f->eax = ret;
 }
 
 static void sys_seek(struct intr_frame *f)
 {
-  printf("Open Seek\n");
   /* Seek returns nothing */
+  int *esp = f->esp;
+  int fd = *(esp + 1);
+  unsigned position = (unsigned) *(esp + 2);
+
+  start_filesys_access();
+
+  unsigned pos = 0;
+
+  struct thread *current_thread = thread_current();
+
+  struct file_descriptor descriptor;
+  descriptor.fd = fd;
+
+  struct hash_elem *elem = hash_find(&current_thread->process->fd_table, &descriptor.hash_elem);
+
+  if (elem != NULL) {
+    struct file_descriptor *open_descriptor = hash_entry (elem, struct file_descriptor, hash_elem);
+    if (open_descriptor != NULL) {
+      pos = file_seek(open_descriptor->file, position);
+    }
+  }
+
+  end_filesys_access();
 }
 
 static void sys_tell(struct intr_frame *f)
 {
-  printf("Open Tell\n");
   /* Tell returns an unsigned value */
-  f->eax = 1;
+  int *esp = f->esp;
+  int fd = *(esp + 1);
+
+  start_filesys_access();
+
+  unsigned pos = 0;
+
+  struct thread *current_thread = thread_current();
+
+  struct file_descriptor descriptor;
+  descriptor.fd = fd;
+
+  struct hash_elem *elem = hash_find(&current_thread->process->fd_table, &descriptor.hash_elem);
+
+  if (elem != NULL) {
+    struct file_descriptor *open_descriptor = hash_entry (elem, struct file_descriptor, hash_elem);
+    if (open_descriptor != NULL) {
+      pos = file_tell(open_descriptor->file);
+    }
+  }
+
+  end_filesys_access();
+
+  f->eax = pos;
 }
 
 static void sys_close(struct intr_frame *f)
 {
-  printf("Open Close\n");
   /* Close returns nothing */
+  int *esp = f->esp;
+  int fd = *(esp + 1);
+
+  struct thread *current_thread = thread_current();
+
+  struct file_descriptor descriptor;
+  descriptor.fd = fd;
+
+  struct hash_elem *elem = hash_find(&current_thread->process->fd_table, &descriptor.hash_elem);
+
+  if (elem != NULL) {
+    struct file_descriptor *open_descriptor = hash_entry (elem, struct file_descriptor, hash_elem);
+    start_filesys_access();
+
+    if (open_descriptor != NULL) {
+      file_close (open_descriptor->file);
+      struct file_descriptor close_descriptor;
+      close_descriptor.fd = open_descriptor->fd;
+      hash_delete(&current_thread->process->fd_table, &close_descriptor.hash_elem);
+      free(open_descriptor); 
+    }
+
+    end_filesys_access();
+  } 
 }

@@ -107,6 +107,7 @@ struct thread
 
 #ifdef USERPROG
    /* Owned by userprog/process.c. */
+   struct file *file; /* A pointer to the executing file */
    uint32_t *pagedir; /* Page directory. */
    struct process *process;
    struct list child_elems; /* List for list of thread's children */

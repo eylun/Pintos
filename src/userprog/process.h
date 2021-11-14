@@ -4,6 +4,8 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 
+#include "lib/kernel/hash.h"
+
 typedef int pid_t;
 
 tid_t process_execute(const char *file_name);
@@ -38,5 +40,7 @@ struct process
   bool has_children;           /* Set to True if the thread has any children */
   struct list_elem child_elem; /* List elem for list of thread's children */
   struct thread *thread;       /* Pointer to thread */
+  struct hash fd_table;        /* Hash table to store file descriptors */
+  int next_fd;                 /* Stores the next number to use for the file descriptor */
 };
 #endif /* userprog/process.h */
