@@ -21,7 +21,7 @@
 
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
-static void *increment_page_ptr(void *, int);
+static void free_setup(struct setup_data *);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -31,6 +31,14 @@ tid_t process_execute(const char *file_name)
 {
   void *fn_copy;
   tid_t tid;
+
+  /* Before doing anything, ensure the file_name passed in fits within a page */
+  /* strnlen is used here because file_name might not be a string, and hence
+     might never terminate. Using strnlen allows the code to have a limit and
+     if the length passes this limit (4096), we return an error */
+  if (strnlen(file_name, PGSIZE + 1) > PGSIZE) {
+    return TID_ERROR;
+  }
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
@@ -46,25 +54,12 @@ tid_t process_execute(const char *file_name)
   /* Save the pointer to the start of the page as page_start,
      it also happens to point to the file_name stored in the page */
   char *page_start = fn_copy;
-  /* Increment the fn_copy pointer to move past the file_name in the page */
-  if (!(fn_copy = increment_page_ptr(fn_copy, strlen(file_name) + 1)))
-  {
-    palloc_free_page(page_start);
-    return TID_ERROR;
-  }
-  /* Set the memory of the page at pointer 'fn_copy' to point to
-     a struct setup_data */
-  struct setup_data *setup = fn_copy;
+  struct setup_data *setup = calloc(1, sizeof(struct setup_data));
 
   /* Increment the fn_copy pointer to move past setup_data in the page */
   list_init(&setup->argv);
   setup->argc = 0;
 
-  if (!(fn_copy = increment_page_ptr(fn_copy, sizeof(struct setup_data))))
-  {
-    palloc_free_page(page_start);
-    return TID_ERROR;
-  }
   /* Convert the command arguments into tokens using strtok_r */
   char *token, *save_ptr;
   struct argument *arg;
@@ -72,16 +67,10 @@ tid_t process_execute(const char *file_name)
        token = strtok_r(NULL, " ", &save_ptr))
   {
     /* Set current value of fn_copy to point to a instance of struct argument */
-    arg = fn_copy;
+    arg = calloc(1, sizeof(struct argument));
     arg->arg = token;
     /* Push the argument to the front of setup_data's argv, stack-style */
     list_push_front(&setup->argv, &arg->elem);
-    /* Increment the fn_copy pointer to move past argument in the page */
-    if (!(fn_copy = increment_page_ptr(fn_copy, sizeof(struct argument))))
-    {
-      palloc_free_page(page_start);
-      return TID_ERROR;
-    }
     setup->argc++;
   }
   /* At this point, file_name is still intact with no changes.
@@ -91,20 +80,11 @@ tid_t process_execute(const char *file_name)
      Process structure is created here because we need to know what is
      the parent id. */
   struct process *p = calloc(1, sizeof(struct process));
-  struct process **process_ptr = fn_copy;
+  setup->p = p;
 
   /* Initialize process semaphore */
   sema_init(&p->wait_sema, 0);
   sema_init(&p->exec_sema, 0);
-
-  /* Push the pointer of this process onto the page so it can be
-     deferenced in start_process(). */
-  *process_ptr = p;
-  if (!(fn_copy = increment_page_ptr(fn_copy, sizeof(void *))))
-  {
-    palloc_free_page(page_start);
-    return TID_ERROR;
-  }
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(page_start, PRI_DEFAULT, start_process, setup);
@@ -122,6 +102,7 @@ tid_t process_execute(const char *file_name)
     if (!p->load_success)
     {
       free(p);
+      free_setup(setup);
       return TID_ERROR;
     }
 
@@ -130,51 +111,35 @@ tid_t process_execute(const char *file_name)
     /* Add process child_elem to thread's list of child_elems */
     list_push_back(&thread_current()->child_elems, &p->child_elem);
   }
+  free_setup(setup);
   return tid;
 }
 
-/* Check if newly added pointer will be within limits of page boundary.
-   This is to catch situations where there is overflow in the page,
-   (or underflow, somehow) */
-void *increment_page_ptr(void *curr, int size)
-{
-  void *incremented = curr + size;
-  /* IF new pointer is within limits of page boundary, return pointer,
-     otherwise, return NULL. */
-  return incremented <= pg_round_down(curr) + PGSIZE
-             ? incremented
-             : NULL;
+void free_setup(struct setup_data *setup) {
+  struct list_elem *e;
+  /* Using method provided in list.c for freeing list elements */
+  while (!list_empty (&setup->argv))
+     {
+       e = list_pop_front (&setup->argv);
+       free(list_entry(e, struct argument, elem));
+     }
+  free(setup);
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process(void *page)
+start_process(void *_setup)
 {
-  /* page is a page that points to a struct setup_data.
-     After struct setup_data, the page stores the list elements
-     of setup_data's argv list
-      ___________________________
-     | file_name  ...........\0  |
-     |___________________________|
-     | struct setup_data         | <- page points here
-     | ..........                |
-     |___________________________|
-     | struct argument           |
-     |___________________________|
-     | struct argument           |
-     |___________________________|
-     |...                        |
-     |...                        |
-     |___________________________|
-     Cast file_name into a struct setup_data */
+  /* setup is a struct setup_data. It contains the arguments in a list (argv),
+     the process pointer and argument count (argc) */
 
   /* Retrieve file_name from the top of page */
-  char *file_name = pg_round_down(page);
-  /* Retrieve setup data from new page location */
-  struct setup_data *setup = page;
   struct intr_frame if_;
   bool success;
+
+  struct setup_data* setup = _setup;
+
   /* Initialize interrupt frame and load executable. */
   memset(&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -182,26 +147,21 @@ start_process(void *page)
   if_.eflags = FLAG_IF | FLAG_MBS;
 
   /* Signal the parent process if properly executed */
-  success = load(file_name, &if_.eip, &if_.esp);
+  success = load(thread_current()->name, &if_.eip, &if_.esp);
 
-  /* Acquire struct process after pushing everything onto the stack */
-  struct process **p = page +
-                       sizeof(struct setup_data) + setup->argc * sizeof(struct argument);
-
-  // TODO: HOW TO CHECK IF PROCESS IS VALID (exec-missing.c)
-  struct process *process_check = *p;
-  process_check->load_success = success;
-  sema_up(&process_check->exec_sema);
+  /* Acquire struct process from the setup data*/
+  struct process *p = setup->p;
+  p->load_success = success;
+  sema_up(&p->exec_sema);
 
   /* If load failed, quit. */
   if (!success)
   {
     /* Set thread's child process exit code to TID_ERROR */
-    palloc_free_page(file_name);
     thread_exit();
   }
 
-  thread_current()->process = process_check;
+  thread_current()->process = p;
 
   int arg_len;
   struct list_elem *e;
@@ -249,8 +209,6 @@ start_process(void *page)
   /* Push up fake return address */
   if_.esp -= sizeof(void *);
   memset(if_.esp, 0, sizeof(void *));
-
-  palloc_free_page(file_name);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in

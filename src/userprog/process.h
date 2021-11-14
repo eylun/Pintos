@@ -19,8 +19,9 @@ struct argument
 };
 struct setup_data
 {
-  int argc;         /* number of arguments */
-  struct list argv; /* list of arguments */
+  int argc;          /* number of arguments */
+  struct list argv;  /* list of arguments */
+  struct process *p; /* pointer to calloc'd process memory */
 };
 
 /* Structure of a process, each thread will have one of these if a process is
