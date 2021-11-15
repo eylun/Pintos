@@ -16,14 +16,14 @@ void process_activate(void);
 struct argument
 {
   struct list_elem elem; /* List element for argv list in struct setup_data */
-  char *arg;             /* string argument */
-  void *stack_addr;      /* memory of where the argument is stored for stack */
+  char *arg;             /* String argument */
+  void *stack_addr;      /* Memory of where the argument is stored for stack */
 };
 struct setup_data
 {
-  int argc;          /* number of arguments */
-  struct list argv;  /* list of arguments */
-  struct process *p; /* pointer to calloc'd process memory */
+  int argc;          /* Number of arguments */
+  struct list argv;  /* List of arguments */
+  struct process *p; /* Pointer to calloc'd process memory */
 };
 
 /* Structure of a process, each thread will have one of these if a process is
@@ -32,8 +32,8 @@ struct process
 {
   pid_t pid;                   /* Process identification */
   int exit_code;               /* Exit code of process */
-  struct semaphore wait_sema;  /* Semaphore for process */
-  struct semaphore exec_sema;
+  struct semaphore wait_sema;  /* Semaphore for process waiting */
+  struct semaphore exec_sema;  /* Semaphore for process execution */
   bool load_success;           /* Set to True if this process has been successfully loaded */
   bool is_waited_on;           /* Set to True if this process is being waited on */
   bool has_parent;             /* Set to True if this process has a parent */

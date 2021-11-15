@@ -13,7 +13,7 @@
 typedef void (*handler)(struct intr_frame *);
 
 static void syscall_handler(struct intr_frame *);
-static bool validate_memory(void *, int);
+static void validate_memory(void *, int);
 
 static void sys_halt(struct intr_frame *UNUSED);
 static void sys_exit(struct intr_frame *);
@@ -56,17 +56,6 @@ static const int sysarguments[] = {
     0, 1, 1, 1, 2, 1, 1, 1, 3, 3, 2, 1, 1};
 
 static struct lock filesys_lock;
-static struct lock free_lock;
-
-void acquire_free_lock(void)
-{
-  lock_acquire(&free_lock);
-}
-
-void release_free_lock(void)
-{
-  lock_release(&free_lock);
-}
 
 void start_filesys_access(void)
 {
@@ -88,32 +77,33 @@ static void
 syscall_handler(struct intr_frame *f)
 {
   int *esp = f->esp;
-  if (!validate_memory(esp, 1))
-  {
-    exit(EXIT_CODE);
-  }
+  /* First, validate the pointer to esp .*/
+  validate_memory(esp, 1);
+  /* Retrieve number of arguments using the sysarguments array */
   int arguments = sysarguments[*esp];
-  if (!validate_memory(esp + 1, arguments))
-  {
-    exit(EXIT_CODE);
-  }
+  /* Next, validate the pointers to the arguments for this system call */
+  validate_memory(esp + 1, arguments);
   /* All syscall handlers work under the assumption that the
      arguments have been validated. This is safe to assume because validation
      occurs right before the calling of the handlers */
   syscalls[*esp](f);
 }
 
-static bool validate_memory(void *pointer, int arguments)
+/* validate_memory takes in a pointer and an arguments parameter.
+   If arguments is 0, there is nothing to validate
+   If arguments is non-zero, validate this amount of pointers
+   At any point if validation fails, terminate immediately */
+static void validate_memory(void *pointer, int arguments)
 {
   /* If 0 arguments, then there is no need to check */
   if (arguments == 0)
   {
-    return true;
+    return;
   }
   /* Check if pointer provided is null */
   if (!pointer)
   {
-    return false;
+    exit(EXIT_CODE);
   }
   for (int count = 0; count < arguments; ++count)
   {
@@ -122,25 +112,28 @@ static bool validate_memory(void *pointer, int arguments)
     if (!is_user_vaddr(pointer + count) ||
         !pagedir_get_page(thread_current()->pagedir, pointer + count))
     {
-      return false;
+      exit(EXIT_CODE);
     }
   }
-  return true;
 }
-
-static void validate_pointer(void *pointer)
+/* validate_buffer validates the memory that an entire buffer occupies.
+   This function usually validates pointers which are passed in, not
+   pointers from the interrupt frame.
+   It takes in the pointer itself, as well as a size limit.
+   For every 4096 bytes, there is a need to recheck the pagedir.
+   THIS FUNCTION WILL BE CALLED ONLY AFTER validate_memory. This is for
+   the sys_exec handler to not double-validate */
+static void validate_buffer(void *pointer, unsigned size)
 {
-  if (!pointer || !is_user_vaddr(pointer) || !pagedir_get_page(thread_current()->pagedir, pointer))
+  /* The start of the pointer has already been validated, no need to
+     validate again. */
+  for (unsigned i = PGSIZE; i < size; i += PGSIZE)
   {
-    exit(EXIT_CODE);
+    /* Revalidate the pointer for every PGSIZE bytes */
+    validate_memory(pointer + i, 1);
   }
-
-  size_t pointer_size = strnlen(pointer, PGSIZE);
-
-  if (!is_user_vaddr(pointer + pointer_size) || !pagedir_get_page(thread_current()->pagedir, pointer + pointer_size))
-  {
-    exit(EXIT_CODE);
-  }
+  /* Validate the end of the buffer */
+  validate_memory(pointer + size, 1);
 }
 
 static void sys_halt(struct intr_frame *f UNUSED)
@@ -173,16 +166,13 @@ static void sys_exec(struct intr_frame *f)
         Check this using strnlen(cmd_line, 4096), and use validate_memory
         on the end of the buffer */
 
-  /* TODO: Make a buffer check function (reuse for file read/write) */
-  if (!validate_memory((void *)cmd_line, 1))
-  {
-    exit(EXIT_CODE);
-  }
-  size_t cmd_line_size = strnlen(cmd_line, PGSIZE);
-  if (!validate_memory((void *)(cmd_line + cmd_line_size), 1))
-  {
-    exit(EXIT_CODE);
-  }
+  /* A command line can only contain PGSIZE worth of bytes.
+     Validate the starting pointer first, then retrieve the length of the
+     string. Note that it is possible that while cmd_line points to user
+     memory, it might not point to an actual string. */
+  validate_memory(cmd_line, 1);
+  validate_buffer(cmd_line, strnlen(cmd_line, PGSIZE));
+
   f->eax = process_execute(cmd_line);
 }
 
@@ -201,7 +191,8 @@ static void sys_create(struct intr_frame *f)
   const char *file = *(esp + 1);
   unsigned initial_size = *(esp + 2);
 
-  validate_pointer(file);
+  validate_memory(file, 1);
+  validate_buffer(file, FILE_MAX);
 
   start_filesys_access();
 
@@ -216,7 +207,8 @@ static void sys_remove(struct intr_frame *f)
   int *esp = f->esp;
   const char *file = *(esp + 1);
 
-  validate_pointer(file);
+  validate_memory(file, 1);
+  validate_buffer(file, FILE_MAX);
 
   start_filesys_access();
 
@@ -230,7 +222,8 @@ static void sys_open(struct intr_frame *f)
   /* Open returns an int value */
   int *esp = f->esp;
   const char *filename = *(esp + 1);
-  validate_pointer(filename);
+  validate_memory(filename, 1);
+  validate_buffer(filename, FILE_MAX);
 
   start_filesys_access();
 
@@ -238,7 +231,7 @@ static void sys_open(struct intr_frame *f)
 
   end_filesys_access();
 
-  int fd = -1;
+  int fd = EXIT_CODE;
 
   if (file != NULL)
   {
@@ -302,10 +295,10 @@ static void sys_read(struct intr_frame *f)
   const void *buffer = *(esp + 2);
   unsigned size = *(esp + 3);
 
-  validate_pointer(buffer);
-  validate_pointer(buffer + size);
+  validate_memory(buffer, 1);
+  validate_buffer(buffer, size);
 
-  int ret = -1;
+  int ret = EXIT_CODE;
 
   if (fd == 0)
   {
@@ -341,8 +334,8 @@ static void sys_write(struct intr_frame *f)
   const void *buffer = (void *)*(esp + 2);
   unsigned size = *(esp + 3);
 
-  validate_pointer(buffer);
-  validate_pointer(buffer + size);
+  validate_memory(buffer, 1);
+  validate_buffer(buffer, size);
 
   int ret = 0;
   if (fd == 1)
