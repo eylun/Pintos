@@ -56,6 +56,17 @@ static const int sysarguments[] = {
     0, 1, 1, 1, 2, 1, 1, 1, 3, 3, 2, 1, 1};
 
 static struct lock filesys_lock;
+static struct lock free_lock;
+
+void acquire_free_lock(void)
+{
+  lock_acquire(&free_lock);
+}
+
+void release_free_lock(void)
+{
+  lock_release(&free_lock);
+}
 
 void start_filesys_access(void)
 {
@@ -71,6 +82,7 @@ void
 syscall_init (void) 
 {
   lock_init(&filesys_lock);
+  lock_init(&free_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
@@ -119,7 +131,6 @@ static bool validate_memory(void *pointer, int arguments)
 }
 
 static void validate_pointer(void *pointer) {
-  // printf("%x rubbish\n", pointer);
   if (!pointer || !is_user_vaddr(pointer) || !pagedir_get_page(thread_current()->pagedir, pointer)) {
     exit(EXIT_CODE);
   }
@@ -222,7 +233,6 @@ static void sys_open(struct intr_frame *f)
   /* Open returns an int value */
   int *esp = f->esp;
   const char *filename = *(esp + 1);
-
   validate_pointer(filename);
 
   start_filesys_access();
@@ -235,6 +245,7 @@ static void sys_open(struct intr_frame *f)
 
     struct file_descriptor *descriptor = malloc(sizeof (struct file_descriptor));
     if (descriptor == NULL) {
+      end_filesys_access();
       exit(EXIT_CODE);
     }
 

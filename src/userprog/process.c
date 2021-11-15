@@ -24,6 +24,7 @@
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
 static void free_setup(struct setup_data *);
+static void free_hash_file(struct hash_elem *, void * UNUSED);
 
 unsigned fd_table_hash_func (const struct hash_elem *e, void *aux);
 bool fd_table_less_func (const struct hash_elem *a, const struct hash_elem *b, void *aux);
@@ -60,6 +61,10 @@ tid_t process_execute(const char *file_name)
      it also happens to point to the file_name stored in the page */
   char *page_start = fn_copy;
   struct setup_data *setup = calloc(1, sizeof(struct setup_data));
+  if (!setup) {
+    palloc_free_page(page_start);
+    return TID_ERROR;
+  }
 
   /* Increment the fn_copy pointer to move past setup_data in the page */
   list_init(&setup->argv);
@@ -73,6 +78,11 @@ tid_t process_execute(const char *file_name)
   {
     /* Set current value of fn_copy to point to a instance of struct argument */
     arg = calloc(1, sizeof(struct argument));
+    if (!arg) {
+      palloc_free_page(page_start);
+      free_setup(setup);
+      return TID_ERROR;
+    }
     arg->arg = token;
     /* Push the argument to the front of setup_data's argv, stack-style */
     list_push_front(&setup->argv, &arg->elem);
@@ -85,6 +95,11 @@ tid_t process_execute(const char *file_name)
      Process structure is created here because we need to know what is
      the parent id. */
   struct process *p = calloc(1, sizeof(struct process));
+  if (!p) {
+    free_setup(setup);
+    palloc_free_page(page_start);
+    return TID_ERROR;
+  }
   setup->p = p;
 
   /* Initialize process semaphore */
@@ -100,17 +115,17 @@ tid_t process_execute(const char *file_name)
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(page_start, PRI_DEFAULT, start_process, setup);
 
+  sema_down(&p->exec_sema);
+  palloc_free_page(page_start);
+  free_setup(setup);
   /* Check for error, if none, cond_wait */
   if (tid != TID_ERROR)
   {
-    sema_down(&p->exec_sema);
 
     /* If process not loaded, free process and return TID_ERROR */
     if (!p->load_success)
     {
       free(p);
-      free_setup(setup);
-      palloc_free_page(page_start);
       return TID_ERROR;
     }
 
@@ -119,20 +134,25 @@ tid_t process_execute(const char *file_name)
     /* Add process child_elem to thread's list of child_elems */
     list_push_back(&thread_current()->child_elems, &p->child_elem);
   }
-  palloc_free_page(page_start);
-  free_setup(setup);
   return tid;
 }
 
 void free_setup(struct setup_data *setup) {
   struct list_elem *e;
   /* Using method provided in list.c for freeing list elements */
+  enum intr_level old;
+  // acquire_free_lock();
   while (!list_empty (&setup->argv))
      {
        e = list_pop_front (&setup->argv);
+      //  old = intr_disable();
        free(list_entry(e, struct argument, elem));
+      //  intr_set_level(old);
      }
+  // old = intr_disable();
   free(setup);
+  // release_free_lock();
+  // intr_set_level(old);
 }
 
 /* A thread function that loads a user process and starts it
@@ -288,6 +308,11 @@ void process_exit(void)
     printf("%s: exit(%d)\n", cur->name, cur->process->exit_code);
     cur->process->terminated = true;
     sema_up(&cur->process->wait_sema);
+
+    /* Clear up process file hash table */
+    start_filesys_access();
+    hash_destroy (&cur->process->fd_table, free_hash_file);
+    end_filesys_access();
   }
 
   if (cur->file)
@@ -315,6 +340,13 @@ void process_exit(void)
     pagedir_activate(NULL);
     pagedir_destroy(pd);
   }
+}
+
+void free_hash_file (struct hash_elem *e, void *aux UNUSED) {
+  struct file_descriptor *fd = hash_entry(e, struct file_descriptor, hash_elem);
+  file_close(fd->file);
+  hash_delete(&thread_current()->process->fd_table, e);
+  free(fd);
 }
 
 /* Sets up the CPU for running user code in the current
