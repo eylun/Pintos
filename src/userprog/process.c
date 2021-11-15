@@ -24,10 +24,10 @@
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
 static void free_setup(struct setup_data *);
-static void free_hash_file(struct hash_elem *, void * UNUSED);
+static void free_hash_file(struct hash_elem *, void *UNUSED);
 
-unsigned fd_table_hash_func (const struct hash_elem *e, void *aux);
-bool fd_table_less_func (const struct hash_elem *a, const struct hash_elem *b, void *aux);
+unsigned fd_table_hash_func(const struct hash_elem *e, void *aux);
+bool fd_table_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -42,7 +42,8 @@ tid_t process_execute(const char *file_name)
   /* strnlen is used here because file_name might not be a string, and hence
      might never terminate. Using strnlen allows the code to have a limit and
      if the length passes this limit (4096), we return an error */
-  if (strnlen(file_name, PGSIZE + 1) > PGSIZE) {
+  if (strnlen(file_name, PGSIZE + 1) > PGSIZE)
+  {
     return TID_ERROR;
   }
 
@@ -57,12 +58,10 @@ tid_t process_execute(const char *file_name)
      At any point where fn_copy is changed to point outside of the page, the
      program will free the page and terminate */
 
-  /* Save the pointer to the start of the page as page_start,
-     it also happens to point to the file_name stored in the page */
-  char *page_start = fn_copy;
   struct setup_data *setup = calloc(1, sizeof(struct setup_data));
-  if (!setup) {
-    palloc_free_page(page_start);
+  if (!setup)
+  {
+    palloc_free_page(fn_copy);
     return TID_ERROR;
   }
 
@@ -73,13 +72,14 @@ tid_t process_execute(const char *file_name)
   /* Convert the command arguments into tokens using strtok_r */
   char *token, *save_ptr;
   struct argument *arg;
-  for (token = strtok_r(page_start, " ", &save_ptr); token;
+  for (token = strtok_r(fn_copy, " ", &save_ptr); token;
        token = strtok_r(NULL, " ", &save_ptr))
   {
     /* Set current value of fn_copy to point to a instance of struct argument */
     arg = calloc(1, sizeof(struct argument));
-    if (!arg) {
-      palloc_free_page(page_start);
+    if (!arg)
+    {
+      palloc_free_page(fn_copy);
       free_setup(setup);
       return TID_ERROR;
     }
@@ -91,15 +91,19 @@ tid_t process_execute(const char *file_name)
   /* At this point, file_name is still intact with no changes.
      However, the copy of file_name in the page has all the spaces replaced
      with '\0' characters because of strtok_r. */
+
   /* Create process struct
      Process structure is created here because we need to know what is
      the parent id. */
   struct process *p = calloc(1, sizeof(struct process));
-  if (!p) {
+  if (!p)
+  {
     free_setup(setup);
-    palloc_free_page(page_start);
+    palloc_free_page(fn_copy);
     return TID_ERROR;
   }
+  /* Store the pointer in the setup so it can be referenced later during
+     start_process */
   setup->p = p;
 
   /* Initialize process semaphore */
@@ -113,15 +117,18 @@ tid_t process_execute(const char *file_name)
   p->next_fd = 2;
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create(page_start, PRI_DEFAULT, start_process, setup);
+  tid = thread_create(fn_copy, PRI_DEFAULT, start_process, setup);
 
+  /* SYNCHRONIZATION - When child has loaded it will sema_up and allow this
+     parent to continue */
   sema_down(&p->exec_sema);
-  palloc_free_page(page_start);
+
+  /* Free the page and setup data, they are no longer needed */
+  palloc_free_page(fn_copy);
   free_setup(setup);
-  /* Check for error, if none, cond_wait */
+
   if (tid != TID_ERROR)
   {
-
     /* If process not loaded, free process and return TID_ERROR */
     if (!p->load_success)
     {
@@ -137,22 +144,17 @@ tid_t process_execute(const char *file_name)
   return tid;
 }
 
-void free_setup(struct setup_data *setup) {
+void free_setup(struct setup_data *setup)
+{
   struct list_elem *e;
   /* Using method provided in list.c for freeing list elements */
   enum intr_level old;
-  // acquire_free_lock();
-  while (!list_empty (&setup->argv))
-     {
-       e = list_pop_front (&setup->argv);
-      //  old = intr_disable();
-       free(list_entry(e, struct argument, elem));
-      //  intr_set_level(old);
-     }
-  // old = intr_disable();
+  while (!list_empty(&setup->argv))
+  {
+    e = list_pop_front(&setup->argv);
+    free(list_entry(e, struct argument, elem));
+  }
   free(setup);
-  // release_free_lock();
-  // intr_set_level(old);
 }
 
 /* A thread function that loads a user process and starts it
@@ -163,11 +165,10 @@ start_process(void *_setup)
   /* setup is a struct setup_data. It contains the arguments in a list (argv),
      the process pointer and argument count (argc) */
 
-  /* Retrieve file_name from the top of page */
   struct intr_frame if_;
   bool success;
 
-  struct setup_data* setup = _setup;
+  struct setup_data *setup = _setup;
 
   /* Initialize interrupt frame and load executable. */
   memset(&if_, 0, sizeof if_);
@@ -181,6 +182,8 @@ start_process(void *_setup)
   /* Acquire struct process from the setup data*/
   struct process *p = setup->p;
   p->load_success = success;
+  /* SYNCHRONIZATION - Child process runs sema_up in order to notify parent
+     that it has loaded */
   sema_up(&p->exec_sema);
 
   /* If load failed, quit. */
@@ -190,6 +193,7 @@ start_process(void *_setup)
     thread_exit();
   }
 
+  /* Set thread's process, only do this is load is successful */
   thread_current()->process = p;
 
   int arg_len;
@@ -257,30 +261,36 @@ start_process(void *_setup)
  * returns -1.
  * If TID is invalid or if it was not a child of the calling process, or if
  * process_wait() has already been successfully called for the given TID,
- * returns -1 immediately, without waiting.
- *
- * This function will be implemented in task 2.
- * For now, it does nothing. */
+ * returns -1 immediately, without waiting. */
 int process_wait(tid_t child_tid)
 {
   struct list_elem *child_elem = list_begin(&thread_current()->child_elems);
 
-  /* Locate child_tid in thread's children */
-  for (;child_elem != list_end(&thread_current()->child_elems); child_elem = list_next(child_elem))
+  /* Locate child_tid in thread's list of children */
+  for (; child_elem != list_end(&thread_current()->child_elems); child_elem = list_next(child_elem))
   {
     struct process *child_process = list_entry(child_elem, struct process, child_elem);
-
-    /* Child process acquires lock */
-    if (child_process->pid == child_tid && !child_process->is_waited_on)
+    if (child_process->pid == child_tid)
     {
+      /* Check if child is already being waited on, return
+         an error if it is */
+      if (child_process->is_waited_on)
+      {
+        return TID_ERROR;
+      }
+      /* Check if child has already terminated. If it has, there is no need
+         to invoke synchronization */
       if (!child_process->terminated)
       {
         /* Set child_process is_waited_on to True */
         child_process->is_waited_on = true;
+
+        /* SYNCRHONIZATION - Parent waits for child to call sema_up
+           when it exits */
         sema_down(&child_process->wait_sema);
       }
 
-      /* Store exit_status on the stack */
+      /* Store exit_status separately as the process is going to be freed */
       int child_exit_code = child_process->exit_code;
 
       /* Remove child_process from process's children list */
@@ -292,7 +302,7 @@ int process_wait(tid_t child_tid)
       return child_exit_code;
     }
   }
-  return -1;
+  return TID_ERROR;
 }
 
 /* Free the current process's resources. */
@@ -301,7 +311,7 @@ void process_exit(void)
   struct thread *cur = thread_current();
   uint32_t *pd;
 
-  /* Check if thread_exitting is running a user process
+  /* Check if thread_exit is running a user process.
      If thread->process is NULL, it means there is no user process */
   if (cur->process)
   {
@@ -311,18 +321,17 @@ void process_exit(void)
 
     /* Clear up process file hash table */
     start_filesys_access();
-    hash_destroy (&cur->process->fd_table, free_hash_file);
+    hash_destroy(&cur->process->fd_table, free_hash_file);
     end_filesys_access();
   }
 
+  /* If the thread also holds onto a file, free it */
   if (cur->file)
   {
     start_filesys_access();
     file_close(cur->file);
     end_filesys_access();
   }
-
-  // Somewhere here we cond_signal
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -342,7 +351,10 @@ void process_exit(void)
   }
 }
 
-void free_hash_file (struct hash_elem *e, void *aux UNUSED) {
+/* Hash file freeing, can be used as a function for completely
+   destroying a hash table storing file descriptors */
+void free_hash_file(struct hash_elem *e, void *aux UNUSED)
+{
   struct file_descriptor *fd = hash_entry(e, struct file_descriptor, hash_elem);
   file_close(fd->file);
   hash_delete(&thread_current()->process->fd_table, e);
@@ -702,14 +714,16 @@ install_page(void *upage, void *kpage, bool writable)
   return (pagedir_get_page(t->pagedir, upage) == NULL && pagedir_set_page(t->pagedir, upage, kpage, writable));
 }
 
-unsigned fd_table_hash_func (const struct hash_elem *e, void *aux UNUSED) {
-  const struct file_descriptor *file_descriptor = hash_entry (e, struct file_descriptor, hash_elem);
+unsigned fd_table_hash_func(const struct hash_elem *e, void *aux UNUSED)
+{
+  const struct file_descriptor *file_descriptor = hash_entry(e, struct file_descriptor, hash_elem);
   return file_descriptor->fd;
 };
 
-bool fd_table_less_func (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
-  const struct file_descriptor *file_descriptor_a = hash_entry (a, struct file_descriptor, hash_elem);
-  const struct file_descriptor *file_descriptor_b = hash_entry (b, struct file_descriptor, hash_elem);
+bool fd_table_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED)
+{
+  const struct file_descriptor *file_descriptor_a = hash_entry(a, struct file_descriptor, hash_elem);
+  const struct file_descriptor *file_descriptor_b = hash_entry(b, struct file_descriptor, hash_elem);
 
   return file_descriptor_a->fd < file_descriptor_b->fd;
 };
