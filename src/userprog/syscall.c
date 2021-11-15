@@ -251,6 +251,14 @@ static void sys_open(struct intr_frame *f)
   f->eax = fd;
 }
 
+static struct hash_elem *get_elem(struct file_descriptor *descriptor, int fd)
+{
+  struct thread *current_thread = thread_current();
+  descriptor->fd = fd;
+
+  return hash_find(&current_thread->process->fd_table, &descriptor->hash_elem);
+}
+
 static void sys_filesize(struct intr_frame *f)
 {
   /* Filesize returns an int value */
@@ -258,12 +266,9 @@ static void sys_filesize(struct intr_frame *f)
   int fd = *(esp + 1);
 
   int file_size = 0;
-  struct thread *current_thread = thread_current();
-
   struct file_descriptor descriptor;
-  descriptor.fd = fd;
 
-  struct hash_elem *elem = hash_find(&current_thread->process->fd_table, &descriptor.hash_elem);
+  struct hash_elem *elem = get_elem(&descriptor, fd);
 
   if (elem != NULL)
   {
@@ -300,11 +305,8 @@ static void sys_read(struct intr_frame *f)
   }
   else
   {
-    struct thread *current_thread = thread_current();
     struct file_descriptor descriptor;
-    descriptor.fd = fd;
-
-    struct hash_elem *elem = hash_find(&current_thread->process->fd_table, &descriptor.hash_elem);
+    struct hash_elem *elem = get_elem(&descriptor, fd);
 
     if (elem != NULL)
     {
@@ -340,12 +342,9 @@ static void sys_write(struct intr_frame *f)
   }
   else
   {
-    struct thread *current_thread = thread_current();
-
     struct file_descriptor descriptor;
-    descriptor.fd = fd;
 
-    struct hash_elem *elem = hash_find(&current_thread->process->fd_table, &descriptor.hash_elem);
+    struct hash_elem *elem = get_elem(&descriptor, fd);
 
     if (elem != NULL)
     {
@@ -370,13 +369,9 @@ static void sys_seek(struct intr_frame *f)
   unsigned position = (unsigned)*(esp + 2);
 
   unsigned pos = 0;
-
-  struct thread *current_thread = thread_current();
-
   struct file_descriptor descriptor;
-  descriptor.fd = fd;
 
-  struct hash_elem *elem = hash_find(&current_thread->process->fd_table, &descriptor.hash_elem);
+  struct hash_elem *elem = get_elem(&descriptor, fd);
 
   if (elem != NULL)
   {
@@ -397,13 +392,9 @@ static void sys_tell(struct intr_frame *f)
   int fd = *(esp + 1);
 
   unsigned pos = 0;
-
-  struct thread *current_thread = thread_current();
-
   struct file_descriptor descriptor;
-  descriptor.fd = fd;
 
-  struct hash_elem *elem = hash_find(&current_thread->process->fd_table, &descriptor.hash_elem);
+  struct hash_elem *elem = get_elem(&descriptor, fd);
 
   if (elem != NULL)
   {
@@ -425,9 +416,8 @@ static void sys_close(struct intr_frame *f)
   int *esp = f->esp;
   int fd = *(esp + 1);
 
-  struct thread *current_thread = thread_current();
-
   struct file_descriptor descriptor;
+  struct thread *current_thread = thread_current();
   descriptor.fd = fd;
 
   struct hash_elem *elem = hash_find(&current_thread->process->fd_table, &descriptor.hash_elem);
