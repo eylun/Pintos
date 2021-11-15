@@ -7,6 +7,9 @@
 
 void syscall_init (void);
 
+void acquire_free_lock(void);
+void release_free_lock(void);
+
 void start_filesys_access(void);
 void end_filesys_access(void);
 
