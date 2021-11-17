@@ -3,7 +3,6 @@
 #include <inttypes.h>
 #include <round.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
@@ -181,6 +180,9 @@ start_process(void *_setup)
 
   /* Acquire struct process from the setup data*/
   struct process *p = setup->p;
+  p->has_parent = true;
+  p->is_waited_on = false;
+  p->terminated = false;
   p->load_success = success;
   /* SYNCHRONIZATION - Child process runs sema_up in order to notify parent
      that it has loaded */
@@ -311,18 +313,53 @@ void process_exit(void)
   struct thread *cur = thread_current();
   uint32_t *pd;
 
+  /* Loop through this thread's list of child processes.
+     If a child has died, free its process
+     If a child is still alive, set its has_parent flag to false */
+  struct list_elem *e;
+  struct process *child_process;
+  for (e = list_begin(&cur->child_elems); e != list_end(&cur->child_elems);
+       e = list_next(e))
+  {
+    child_process = list_entry(e, struct process, child_elem);
+    if (child_process->terminated)
+    {
+      /* There is no need to free the contents of the child_process, because it
+         has already done so when it's thread called process_exit() */
+      free(child_process);
+    }
+    else
+    {
+      child_process->has_parent = false;
+    }
+  }
+
   /* Check if thread_exit is running a user process.
      If thread->process is NULL, it means there is no user process */
-  if (cur->process)
+  struct process *p = cur->process;
+  if (p)
   {
-    printf("%s: exit(%d)\n", cur->name, cur->process->exit_code);
-    cur->process->terminated = true;
-    sema_up(&cur->process->wait_sema);
+    /* Attempt to end filesys access. It is possible that the exitting thread
+       might still hold onto the filesys lock here */
+    check_and_end_filesys_access();
+    /* Run sema_up the exec_sema, the thread can terminate before it
+       calls for that, and the parent will end up stuck in process_execute.
+       If program has already sema_up'd successfully, running sema_up() again
+       here will not change anything */
+    sema_up(&p->exec_sema);
+    printf("%s: exit(%d)\n", cur->name, p->exit_code);
+    p->terminated = true;
+    sema_up(&p->wait_sema);
 
     /* Clear up process file hash table */
     start_filesys_access();
-    hash_destroy(&cur->process->fd_table, free_hash_file);
+    hash_destroy(&p->fd_table, free_hash_file);
     end_filesys_access();
+    /* If this process no longer has a parent, free it */
+    if (!p->has_parent)
+    {
+      free(p);
+    }
   }
 
   /* If the thread also holds onto a file, free it */

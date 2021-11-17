@@ -14,6 +14,7 @@ void syscall_init(void);
 
 void start_filesys_access(void);
 void end_filesys_access(void);
+void check_and_end_filesys_access(void);
 
 /* Structure of a file descriptor. Used for mapping fd to files. */
 struct file_descriptor

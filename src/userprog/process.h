@@ -38,9 +38,7 @@ struct process
   bool is_waited_on;           /* Set to True if this process is being waited on */
   bool has_parent;             /* Set to True if this process has a parent */
   bool terminated;             /* Set to True if the process is dead */
-  bool has_children;           /* Set to True if the thread has any children */
   struct list_elem child_elem; /* List elem for list of thread's children */
-  struct thread *thread;       /* Pointer to thread */
   struct hash fd_table;        /* Hash table to store file descriptors */
   int next_fd;                 /* Stores the next number to use for the file descriptor */
 };
