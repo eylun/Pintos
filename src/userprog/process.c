@@ -316,11 +316,13 @@ void process_exit(void)
   /* Loop through this thread's list of child processes.
      If a child has died, free its process
      If a child is still alive, set its has_parent flag to false */
-  struct list_elem *e;
+  struct list_elem *e = list_begin(&cur->child_elems);
   struct process *child_process;
-  for (e = list_begin(&cur->child_elems); e != list_end(&cur->child_elems);
-       e = list_next(e))
+
+  while (e != list_end(&cur->child_elems))
   {
+    struct list_elem *next_child = list_next(e);
+
     child_process = list_entry(e, struct process, child_elem);
     if (child_process->terminated)
     {
@@ -332,6 +334,8 @@ void process_exit(void)
     {
       child_process->has_parent = false;
     }
+
+    e = next_child;
   }
 
   /* Check if thread_exit is running a user process.
