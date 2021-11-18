@@ -290,6 +290,7 @@ void thread_exit(void)
   ASSERT(!intr_context());
 
 #ifdef USERPROG
+
   process_exit();
 #endif
 
@@ -342,7 +343,7 @@ void thread_foreach(thread_action_func *func, void *aux)
    Otherwise, the thread's PRIORITY is set to NEW_PRIORITY */
 void thread_set_priority(int new_priority)
 {
-  thread_current()->priority = new_priority; 
+  thread_current()->priority = new_priority;
 }
 
 /* Returns the current thread's PRIORITY. */
@@ -377,7 +378,6 @@ int thread_get_recent_cpu(void)
   /* Not yet implemented */
   return 0;
 }
-
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -511,7 +511,7 @@ next_thread_to_run(void)
     return idle_thread;
   else
   {
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+    return list_entry(list_pop_front(&ready_list), struct thread, elem);
   }
 }
 

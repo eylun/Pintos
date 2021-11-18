@@ -2,13 +2,17 @@
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
 #include "devices/shutdown.h"
+#include "devices/input.h"
 #include <stdio.h>
 #include <syscall-nr.h>
 #include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #include "lib/kernel/hash.h"
+#include "filesys/filesys.h"
+#include "filesys/file.h"
 
 typedef void (*handler)(struct intr_frame *);
 
@@ -65,6 +69,14 @@ void start_filesys_access(void)
 void end_filesys_access(void)
 {
   lock_release(&filesys_lock);
+}
+
+void check_and_end_filesys_access(void)
+{
+  if (filesys_lock.holder && thread_current()->tid == filesys_lock.holder->tid)
+  {
+    end_filesys_access();
+  }
 }
 
 void syscall_init(void)
@@ -127,13 +139,22 @@ static void validate_buffer(void *pointer, unsigned size)
 {
   /* The start of the pointer has already been validated, no need to
      validate again. */
-  for (unsigned i = PGSIZE; i < size; i += PGSIZE)
+  unsigned page_checker = PGSIZE;
+  for (; page_checker < size; page_checker += PGSIZE)
   {
     /* Revalidate the pointer for every PGSIZE bytes */
-    validate_memory(pointer + i, 1);
+    validate_memory(pointer + page_checker, 1);
   }
-  /* Validate the end of the buffer */
-  validate_memory(pointer + size, 1);
+  /* Validate the end of the buffer IF the starting pointer lies on a page
+     boundary. When the starting pointer lies on a page boundary, there is no
+     need to validate the pointer of the end of the buffer, since the start of
+     the last page is validated in the for loop
+      */
+  if (pointer != pg_round_down(pointer))
+  {
+    /* Validate the end of the buffer */
+    validate_memory(pointer + size, 1);
+  }
 }
 
 static void sys_halt(struct intr_frame *f UNUSED)
@@ -170,8 +191,8 @@ static void sys_exec(struct intr_frame *f)
      Validate the starting pointer first, then retrieve the length of the
      string. Note that it is possible that while cmd_line points to user
      memory, it might not point to an actual string. */
-  validate_memory(cmd_line, 1);
-  validate_buffer(cmd_line, strnlen(cmd_line, PGSIZE));
+  validate_memory((void *)cmd_line, 1);
+  validate_buffer((void *)cmd_line, strnlen(cmd_line, PGSIZE));
 
   f->eax = process_execute(cmd_line);
 }
@@ -188,11 +209,11 @@ static void sys_create(struct intr_frame *f)
 {
   /* Create returns a bool value */
   int *esp = f->esp;
-  const char *file = *(esp + 1);
-  unsigned initial_size = *(esp + 2);
+  const char *file = *(const char **)(esp + 1);
+  unsigned initial_size = *(unsigned *)(esp + 2);
 
-  validate_memory(file, 1);
-  validate_buffer(file, FILE_MAX);
+  validate_memory((void *)file, 1);
+  validate_buffer((void *)file, FILE_MAX);
 
   start_filesys_access();
 
@@ -205,10 +226,10 @@ static void sys_remove(struct intr_frame *f)
 {
   /* Remove returns a bool value */
   int *esp = f->esp;
-  const char *file = *(esp + 1);
+  const char *file = *(const char **)(esp + 1);
 
-  validate_memory(file, 1);
-  validate_buffer(file, FILE_MAX);
+  validate_memory((void *)file, 1);
+  validate_buffer((void *)file, FILE_MAX);
 
   start_filesys_access();
 
@@ -221,9 +242,9 @@ static void sys_open(struct intr_frame *f)
 {
   /* Open returns an int value */
   int *esp = f->esp;
-  const char *filename = *(esp + 1);
-  validate_memory(filename, 1);
-  validate_buffer(filename, FILE_MAX);
+  const char *filename = *(const char **)(esp + 1);
+  validate_memory((void *)filename, 1);
+  validate_buffer((void *)filename, FILE_MAX);
 
   start_filesys_access();
 
@@ -292,19 +313,17 @@ static void sys_read(struct intr_frame *f)
   /* Read returns an int value */
   int *esp = f->esp;
   int fd = *(esp + 1);
-  const void *buffer = *(esp + 2);
-  unsigned size = *(esp + 3);
+  const void *buffer = *(const void **)(esp + 2);
+  unsigned size = *(unsigned *)(esp + 3);
 
-  validate_memory(buffer, 1);
-  validate_buffer(buffer, size);
+  validate_memory((void *)buffer, 1);
+  validate_buffer((void *)buffer, size);
 
   int ret = EXIT_CODE;
 
-  if (fd == 0)
+  if (fd == STDIN_FILENO)
   {
-    uint8_t value = input_getc();
-    buffer = value;
-    ret = 1;
+    ret = input_getc();
   }
   else
   {
@@ -317,7 +336,7 @@ static void sys_read(struct intr_frame *f)
       if (open_descriptor != NULL)
       {
         start_filesys_access();
-        ret = file_read(open_descriptor->file, buffer, size);
+        ret = file_read(open_descriptor->file, (void *)buffer, size);
         end_filesys_access();
       }
     }
@@ -331,11 +350,11 @@ static void sys_write(struct intr_frame *f)
   /* Write returns an int value */
   int *esp = f->esp;
   int fd = *(esp + 1);
-  const void *buffer = (void *)*(esp + 2);
-  unsigned size = *(esp + 3);
+  const void *buffer = *(const void **)(esp + 2);
+  unsigned size = *(unsigned *)(esp + 3);
 
-  validate_memory(buffer, 1);
-  validate_buffer(buffer, size);
+  validate_memory((void *)buffer, 1);
+  validate_buffer((void *)buffer, size);
 
   int ret = 0;
   if (fd == 1)
@@ -371,7 +390,6 @@ static void sys_seek(struct intr_frame *f)
   int fd = *(esp + 1);
   unsigned position = (unsigned)*(esp + 2);
 
-  unsigned pos = 0;
   struct file_descriptor descriptor;
 
   struct hash_elem *elem = get_elem(&descriptor, fd);
@@ -382,7 +400,7 @@ static void sys_seek(struct intr_frame *f)
     if (open_descriptor != NULL)
     {
       start_filesys_access();
-      pos = file_seek(open_descriptor->file, position);
+      file_seek(open_descriptor->file, position);
       end_filesys_access();
     }
   }
