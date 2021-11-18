@@ -147,7 +147,6 @@ void free_setup(struct setup_data *setup)
 {
   struct list_elem *e;
   /* Using method provided in list.c for freeing list elements */
-  enum intr_level old;
   while (!list_empty(&setup->argv))
   {
     e = list_pop_front(&setup->argv);
