@@ -139,13 +139,22 @@ static void validate_buffer(void *pointer, unsigned size)
 {
   /* The start of the pointer has already been validated, no need to
      validate again. */
-  for (unsigned i = PGSIZE; i < size; i += PGSIZE)
+  unsigned page_checker = PGSIZE;
+  for (; page_checker < size; page_checker += PGSIZE)
   {
     /* Revalidate the pointer for every PGSIZE bytes */
-    validate_memory(pointer + i, 1);
+    validate_memory(pointer + page_checker, 1);
   }
-  /* Validate the end of the buffer */
-  validate_memory(pointer + size, 1);
+  /* Validate the end of the buffer IF the starting pointer lies on a page
+     boundary. When the starting pointer lies on a page boundary, there is no
+     need to validate the pointer of the end of the buffer, since the start of
+     the last page is validated in the for loop
+      */
+  if (pointer != pg_round_down(pointer))
+  {
+    /* Validate the end of the buffer */
+    validate_memory(pointer + size, 1);
+  }
 }
 
 static void sys_halt(struct intr_frame *f UNUSED)
