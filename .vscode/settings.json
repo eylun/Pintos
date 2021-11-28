@@ -9,6 +9,8 @@
         "condition_variable": "c",
         "random": "c",
         "main.h": "c",
-        "syscall.h": "c"
+        "syscall.h": "c",
+        "string.h": "c",
+        "bitmap.h": "c"
     }
 }

@@ -327,6 +327,7 @@ void process_exit(void)
     {
       /* There is no need to free the contents of the child_process, because it
          has already done so when it's thread called process_exit() */
+      list_remove(e);
       free(child_process);
     }
     else
@@ -529,9 +530,12 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
 
     if (file_ofs < 0 || file_ofs > file_length(file))
       goto done;
+    start_filesys_access();
     file_seek(file, file_ofs);
 
-    if (file_read(file, &phdr, sizeof phdr) != sizeof phdr)
+    off_t file_read_result = file_read(file, &phdr, sizeof phdr);
+    end_filesys_access();
+    if (file_read_result != sizeof phdr)
       goto done;
     file_ofs += sizeof phdr;
     switch (phdr.p_type)
@@ -587,8 +591,9 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
   *eip = (void (*)(void))ehdr.e_entry;
 
   success = true;
-
+  start_filesys_access();
   file_deny_write(file);
+  end_filesys_access();
 done:
   /* We arrive here whether the load is successful or not. */
 
@@ -611,9 +616,13 @@ validate_segment(const struct Elf32_Phdr *phdr, struct file *file)
     return false;
 
   /* p_offset must point within FILE. */
+  start_filesys_access();
   if (phdr->p_offset > (Elf32_Off)file_length(file))
+  {
+    end_filesys_access();
     return false;
-
+  }
+  end_filesys_access();
   /* p_memsz must be at least as big as p_filesz. */
   if (phdr->p_memsz < phdr->p_filesz)
     return false;
@@ -667,8 +676,9 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
   ASSERT((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT(pg_ofs(upage) == 0);
   ASSERT(ofs % PGSIZE == 0);
-
+  start_filesys_access();
   file_seek(file, ofs);
+  end_filesys_access();
   while (read_bytes > 0 || zero_bytes > 0)
   {
     /* Calculate how to fill this page.
