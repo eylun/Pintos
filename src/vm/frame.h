@@ -1,22 +1,26 @@
-#ifndef FRAME_H
-#define FRAME_H
+#ifndef VM_FRAME_H
+#define VM_FRAME_H
 
-#include <hash.h>
-#include <threads/palloc.h>
-
-struct frame_table
-{
-  struct hash ft_hash;
-  struct bitmap *ft_bitmap;
-};
+#include "lib/kernel/hash.h"
+#include "threads/palloc.h"
+#include "threads/synch.h"
 
 struct frame
 {
-  size_t bitmap_index;
   void *kpage;
   void *upage;
   struct thread *owner;
   struct hash_elem elem;
+  struct lock lock;
 };
 
+/* Initialization */
+void ft_init(void);
+
+/* Controller Functions */
+struct frame *ft_request_frame(enum palloc_flags, void *);
+void ft_update(struct frame *);
+struct frame *ft_search_frame(void *);
+void ft_remove_frame(struct frame *);
+void ft_destroy_frame(struct frame *);
 #endif /* vm/frame.h */

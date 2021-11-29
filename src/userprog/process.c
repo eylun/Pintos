@@ -19,6 +19,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "lib/kernel/hash.h"
+#include "vm/vm.h"
 
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
@@ -48,6 +49,8 @@ tid_t process_execute(const char *file_name)
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
+  /* VM NOTE: There is no need to vm alloc this because this is for
+     argument parsing purposes. It will be freed once parsing is over. */
   fn_copy = palloc_get_page(0);
   if (fn_copy == NULL)
     return TID_ERROR;
@@ -730,17 +733,17 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack(void **esp)
 {
-  uint8_t *kpage;
+  uint8_t *kpage, *upage = (uint8_t *)PHYS_BASE - PGSIZE;
   bool success = false;
 
-  kpage = palloc_get_page(PAL_USER | PAL_ZERO);
+  kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, upage);
   if (kpage != NULL)
   {
-    success = install_page(((uint8_t *)PHYS_BASE) - PGSIZE, kpage, true);
+    success = install_page(upage, kpage, true);
     if (success)
       *esp = PHYS_BASE;
     else
-      palloc_free_page(kpage);
+      vm_free_page(kpage);
   }
   return success;
 }
