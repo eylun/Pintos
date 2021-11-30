@@ -7,11 +7,11 @@
 
 struct frame
 {
-  void *kpage;
-  void *upage;
-  struct thread *owner;
-  struct hash_elem elem;
-  struct lock lock;
+  void *kpage;           /* Address of page in kernel virtual memory */
+  void *upage;           /* Address of page in user virtual memory */
+  struct thread *owner;  /* Pointer to thread which owns the page */
+  struct hash_elem elem; /* Hash element for frame hash table */
+  struct lock lock;      /* Lock for synchronizing access to the frame hash table */
 };
 
 /* Initialization */

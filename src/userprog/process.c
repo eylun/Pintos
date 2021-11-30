@@ -118,6 +118,9 @@ tid_t process_execute(const char *file_name)
   /* Sets the first fd to 2 since 0 and 1 are reserved for the console. */
   p->next_fd = 2;
 
+  /* Initialize supplemental page table */
+  sp_init(p);
+
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(fn_copy, PRI_DEFAULT, start_process, setup);
 
