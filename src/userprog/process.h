@@ -41,12 +41,6 @@ struct process
   struct list_elem child_elem; /* List elem for list of thread's children */
   struct hash fd_table;        /* Hash table to store file descriptors */
   int next_fd;                 /* Stores the next number to use for the file descriptor */
-
-/* Task 3 */
-#ifdef VM
-  struct hash sp_table;      /* Supplemental Page Table */
-  struct lock sp_table_lock; /* Lock for synchronization of the supplemental page table */
-#endif
 };
 
 bool install_page(void *, void *, bool);

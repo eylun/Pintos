@@ -28,7 +28,7 @@ struct page_info
 };
 
 /* Initialization */
-void sp_init(struct process *);
+void sp_init(void);
 
 /* Lock Access */
 void start_sp_access(void);

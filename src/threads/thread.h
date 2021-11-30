@@ -4,6 +4,8 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include <hash.h>
+#include "threads/synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -112,7 +114,12 @@ struct thread
    struct process *process;
    struct list child_elems; /* List for list of thread's children */
 #endif
-
+/* Supplemental Page Table placed in struct thread instead of process
+   to simplify kernel thread initialization */
+#ifdef VM
+   struct hash sp_table;      /* Supplemental Page Table */
+   struct lock sp_table_lock; /* Lock for synchronization of the supplemental page table */
+#endif
    /* Owned by thread.c. */
    unsigned magic; /* Detects stack overflow. */
 };

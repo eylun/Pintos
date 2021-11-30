@@ -77,13 +77,14 @@ void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
    non-NULL pointer so the exception handler will not kill the process. */
 void *vm_page_fault(void *fault_addr, void *esp)
 {
+  printf("there is a page fault at : %x\n", fault_addr);
   // Check if fault_addr is a key in this thread's SPT
   struct thread *cur = thread_current();
   void *aligned = pg_round_down(fault_addr);
   struct page_info dummy_page_info;
   struct hash_elem *e;
   dummy_page_info.upage = aligned;
-  e = hash_find(&cur->process->sp_table, &dummy_page_info.elem);
+  e = hash_find(&cur->sp_table, &dummy_page_info.elem);
   /* Faulted address does not have a value mapped to it in the sp_table
      Return NULL to let exception.c kill this frame */
   if (!e)
@@ -141,6 +142,7 @@ static void *load_file(struct page_info *page_info)
     vm_free_page(kpage);
     return NULL;
   }
+  // printf("%x\n", kpage);
   end_filesys_access();
   memset(kpage + page_info->page_read_bytes, 0, page_info->page_zero_bytes);
   return kpage;

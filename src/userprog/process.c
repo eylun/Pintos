@@ -120,9 +120,6 @@ tid_t process_execute(const char *file_name)
   /* Sets the first fd to 2 since 0 and 1 are reserved for the console. */
   p->next_fd = 2;
 
-  /* Initialize supplemental page table */
-  sp_init(p);
-
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(fn_copy, PRI_DEFAULT, start_process, setup);
 
@@ -175,6 +172,9 @@ start_process(void *_setup)
   bool success;
 
   struct setup_data *setup = _setup;
+
+  /* Initialize supplemental page table */
+  sp_init();
 
   /* Initialize interrupt frame and load executable. */
   memset(&if_, 0, sizeof if_);
@@ -695,64 +695,58 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 
     /* Check if virtual page already allocated */
     struct thread *t = thread_current();
-    uint8_t *kpage = pagedir_get_page(t->pagedir, upage);
+    struct page_info *page_info = calloc(1, sizeof(struct page_info));
+    page_info->file = file;
+    page_info->page_status = PAGE_FILESYS;
+    page_info->upage = upage;
+    page_info->writable = writable;
+    page_info->page_read_bytes = page_read_bytes;
+    page_info->page_zero_bytes = page_zero_bytes;
 
-    if (kpage == NULL)
-    {
-      struct page_info *page_info = calloc(1, sizeof(struct page_info));
-      page_info->file = file;
-      page_info->page_status = PAGE_FILESYS;
-      page_info->kpage = kpage;
-      page_info->upage = upage;
-      page_info->writable = writable;
-      page_info->page_read_bytes = page_read_bytes;
-      page_info->page_zero_bytes = page_zero_bytes;
+    /* Insert the newly created page_info into this process' sp_table */
+    hash_insert(&t->sp_table, &page_info->elem);
+    // Malloc new page_info
+    // Fill in page_info
+    // Things to fill:
+    //  1. kpage
+    //  2. upage
+    //  3. page_read_bytes
+    //  4. page_zero_bytes
+    //  5. writable
 
-      /* Insert the newly created page_info into this process' sp_table */
-      hash_insert(&t->process->sp_table, &page_info->elem);
-      // Malloc new page_info
-      // Fill in page_info
-      // Things to fill:
-      //  1. kpage
-      //  2. upage
-      //  3. page_read_bytes
-      //  4. page_zero_bytes
-      //  5. writable
+    // Change vm_page_fault() in vm.c to handle EXEC page_infos
+    // Run the commented out code at the bottom for that to install pages
+    // Connect allocated frame to the page_info.
 
-      // Change vm_page_fault() in vm.c to handle EXEC page_infos
-      // Run the commented out code at the bottom for that to install pages
-      // Connect allocated frame to the page_info.
+    //   /* Get a new page of memory. */
+    //   kpage = palloc_get_page(PAL_USER);
+    //   if (kpage == NULL)
+    //   {
+    //     return false;
+    //   }
 
-      //   /* Get a new page of memory. */
-      //   kpage = palloc_get_page(PAL_USER);
-      //   if (kpage == NULL)
-      //   {
-      //     return false;
-      //   }
+    //   /* Add the page to the process's address space. */
+    //   if (!install_page(upage, kpage, writable))
+    //   {
+    //     palloc_free_page(kpage);
+    //     return false;
+    //   }
+    // }
 
-      //   /* Add the page to the process's address space. */
-      //   if (!install_page(upage, kpage, writable))
-      //   {
-      //     palloc_free_page(kpage);
-      //     return false;
-      //   }
-      // }
+    // /* Load data into the page. */
+    // if (file_read(file, kpage, page_read_bytes) != (int)page_read_bytes)
+    // {
+    //   palloc_free_page(kpage);
+    //   return false;
+    // }
+    // memset(kpage + page_read_bytes, 0, page_zero_bytes);
 
-      // /* Load data into the page. */
-      // if (file_read(file, kpage, page_read_bytes) != (int)page_read_bytes)
-      // {
-      //   palloc_free_page(kpage);
-      //   return false;
-      // }
-      // memset(kpage + page_read_bytes, 0, page_zero_bytes);
-
-      /* Advance. */
-      read_bytes -= page_read_bytes;
-      zero_bytes -= page_zero_bytes;
-      upage += PGSIZE;
-    }
-    return true;
+    /* Advance. */
+    read_bytes -= page_read_bytes;
+    zero_bytes -= page_zero_bytes;
+    upage += PGSIZE;
   }
+  return true;
 }
 
 /* Create a minimal stack by mapping a zeroed page at the top of
