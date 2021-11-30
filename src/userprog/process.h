@@ -44,8 +44,11 @@ struct process
 
 /* Task 3 */
 #ifdef VM
-  struct hash sp_table;     /* Supplemental Page Table */
-  stuct lock sp_table_lock; /* Lock for synchronization of the supplemental page table */
+  struct hash sp_table;      /* Supplemental Page Table */
+  struct lock sp_table_lock; /* Lock for synchronization of the supplemental page table */
 #endif
 };
+
+bool install_page(void *, void *, bool);
+
 #endif /* userprog/process.h */

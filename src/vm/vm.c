@@ -6,14 +6,18 @@
 #include "threads/vaddr.h"
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
+#include "userprog/syscall.h"
 #include "filesys/file.h"
 #include "string.h"
 #include "vm/vm.h"
 #include "vm/frame.h"
 #include "vm/swap.h"
+#include "vm/page.h"
 
 /* Lock for accessing vm brain */
 static struct lock vm_lock;
+
+static void *load_file(struct page_info *);
 
 void start_vm_access(void)
 {
@@ -73,7 +77,31 @@ void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
    non-NULL pointer so the exception handler will not kill the process. */
 void *vm_page_fault(void *fault_addr, void *esp)
 {
-  return NULL;
+  // Check if fault_addr is a key in this thread's SPT
+  struct thread *cur = thread_current();
+  void *aligned = pg_round_down(fault_addr);
+  struct page_info dummy_page_info;
+  struct hash_elem *e;
+  dummy_page_info.upage = aligned;
+  e = hash_find(&cur->process->sp_table, &dummy_page_info.elem);
+  /* Faulted address does not have a value mapped to it in the sp_table
+     Return NULL to let exception.c kill this frame */
+  if (!e)
+  {
+    return NULL;
+  }
+  struct page_info *page_info = hash_entry(e, struct page_info, elem);
+  switch (page_info->page_status)
+  {
+  case PAGE_FILESYS:
+    return load_file(page_info);
+    break;
+  default:
+    PANIC("lol wtf");
+  }
+  // IF NOT, just return NULL
+  // IF it exists, check ENUM of page_info
+  // IMPLEMENT FILESYS (for lazy loading)
 }
 
 /* VM free page. The VM will search for the pointer provided in the frame table.
@@ -87,4 +115,33 @@ void vm_free_page(void *kpage)
   ASSERT(frame); /* If the search fails, panic */
   ft_destroy_frame(frame);
   end_vm_access();
+}
+
+static void *load_file(struct page_info *page_info)
+{
+  /* Get a new page of memory. */
+  void *kpage = vm_alloc_get_page(PAL_USER, page_info->upage);
+  if (kpage == NULL)
+  {
+    return NULL;
+  }
+
+  /* Add the page to the process's address space. */
+  if (!install_page(page_info->upage, kpage, page_info->writable))
+  {
+    vm_free_page(kpage);
+    return NULL;
+  }
+
+  /* Load data into the page. */
+  start_filesys_access();
+  if (file_read(page_info->file, kpage, page_info->page_read_bytes) != (int)page_info->page_read_bytes)
+  {
+    end_filesys_access();
+    vm_free_page(kpage);
+    return NULL;
+  }
+  end_filesys_access();
+  memset(kpage + page_info->page_read_bytes, 0, page_info->page_zero_bytes);
+  return kpage;
 }

@@ -20,12 +20,14 @@
 #include "threads/vaddr.h"
 #include "lib/kernel/hash.h"
 #include "vm/vm.h"
+#include "vm/page.h"
 
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
 static void free_setup(struct setup_data *);
 static void free_hash_file(struct hash_elem *, void *UNUSED);
 
+bool install_page(void *upage, void *kpage, bool writable);
 unsigned fd_table_hash_func(const struct hash_elem *e, void *aux);
 bool fd_table_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux);
 
@@ -610,8 +612,6 @@ done:
 
 /* load() helpers. */
 
-static bool install_page(void *upage, void *kpage, bool writable);
-
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
 static bool
@@ -699,36 +699,60 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 
     if (kpage == NULL)
     {
+      struct page_info *page_info = calloc(1, sizeof(struct page_info));
+      page_info->file = file;
+      page_info->page_status = PAGE_FILESYS;
+      page_info->kpage = kpage;
+      page_info->upage = upage;
+      page_info->writable = writable;
+      page_info->page_read_bytes = page_read_bytes;
+      page_info->page_zero_bytes = page_zero_bytes;
 
-      /* Get a new page of memory. */
-      kpage = palloc_get_page(PAL_USER);
-      if (kpage == NULL)
-      {
-        return false;
-      }
+      /* Insert the newly created page_info into this process' sp_table */
+      hash_insert(&t->process->sp_table, &page_info->elem);
+      // Malloc new page_info
+      // Fill in page_info
+      // Things to fill:
+      //  1. kpage
+      //  2. upage
+      //  3. page_read_bytes
+      //  4. page_zero_bytes
+      //  5. writable
 
-      /* Add the page to the process's address space. */
-      if (!install_page(upage, kpage, writable))
-      {
-        palloc_free_page(kpage);
-        return false;
-      }
+      // Change vm_page_fault() in vm.c to handle EXEC page_infos
+      // Run the commented out code at the bottom for that to install pages
+      // Connect allocated frame to the page_info.
+
+      //   /* Get a new page of memory. */
+      //   kpage = palloc_get_page(PAL_USER);
+      //   if (kpage == NULL)
+      //   {
+      //     return false;
+      //   }
+
+      //   /* Add the page to the process's address space. */
+      //   if (!install_page(upage, kpage, writable))
+      //   {
+      //     palloc_free_page(kpage);
+      //     return false;
+      //   }
+      // }
+
+      // /* Load data into the page. */
+      // if (file_read(file, kpage, page_read_bytes) != (int)page_read_bytes)
+      // {
+      //   palloc_free_page(kpage);
+      //   return false;
+      // }
+      // memset(kpage + page_read_bytes, 0, page_zero_bytes);
+
+      /* Advance. */
+      read_bytes -= page_read_bytes;
+      zero_bytes -= page_zero_bytes;
+      upage += PGSIZE;
     }
-
-    /* Load data into the page. */
-    if (file_read(file, kpage, page_read_bytes) != (int)page_read_bytes)
-    {
-      palloc_free_page(kpage);
-      return false;
-    }
-    memset(kpage + page_read_bytes, 0, page_zero_bytes);
-
-    /* Advance. */
-    read_bytes -= page_read_bytes;
-    zero_bytes -= page_zero_bytes;
-    upage += PGSIZE;
+    return true;
   }
-  return true;
 }
 
 /* Create a minimal stack by mapping a zeroed page at the top of
@@ -760,8 +784,7 @@ setup_stack(void **esp)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
-install_page(void *upage, void *kpage, bool writable)
+bool install_page(void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current();
 
