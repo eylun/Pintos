@@ -86,17 +86,13 @@ void *vm_page_fault(void *fault_addr, void *esp)
   // Check if fault_addr is a key in this thread's SPT
   struct thread *cur = thread_current();
   void *aligned = pg_round_down(fault_addr);
-  struct page_info dummy_page_info;
-  struct hash_elem *e;
-  dummy_page_info.upage = aligned;
-  e = hash_find(&cur->sp_table, &dummy_page_info.elem);
   /* Faulted address does not have a value mapped to it in the sp_table
      Return NULL to let exception.c kill this frame */
-  if (!e)
+  struct page_info *page_info = sp_search_page_info(aligned);
+  if (!page_info)
   {
     return NULL;
   }
-  struct page_info *page_info = hash_entry(e, struct page_info, elem);
   switch (page_info->page_status)
   {
   case PAGE_FILESYS:
@@ -136,7 +132,8 @@ static void *load_file(struct page_info *page_info)
     return NULL;
   }
   end_filesys_access();
-  memset(kpage + page_info->page_read_bytes, 0, page_info->page_zero_bytes);
+  /* The value page_zero_bytes is equal to PGSIZE - page_info->page_read_bytes */
+  memset(kpage + page_info->page_read_bytes, 0, PGSIZE - page_info->page_read_bytes);
   return kpage;
 }
 
