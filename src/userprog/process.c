@@ -684,6 +684,7 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
   ASSERT(ofs % PGSIZE == 0);
   start_filesys_access();
   file_seek(file, ofs);
+  off_t start = ofs;
   end_filesys_access();
   while (read_bytes > 0 || zero_bytes > 0)
   {
@@ -702,9 +703,24 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
     page_info->writable = writable;
     page_info->page_read_bytes = page_read_bytes;
     page_info->page_zero_bytes = page_zero_bytes;
-
+    page_info->start = start;
+    if (page_zero_bytes == PGSIZE)
+    {
+      page_info->page_status = PAGE_ZERO;
+    }
     /* Insert the newly created page_info into this process' sp_table */
-    hash_insert(&t->sp_table, &page_info->elem);
+    /* Insert page metadata into hash table through hash_replace due to GCC
+       complications where the same code can be inserted in the same segment */
+    struct hash_elem *old_e = hash_replace(&t->sp_table, &page_info->elem);
+    struct page_info *old_info;
+    /* If something has been replaced it means that this page_info was the old
+       info. Free it as it is no longer needed */
+    if (old_e)
+    {
+      old_info = hash_entry(old_e, struct page_info, elem);
+      page_info->writable = old_info->writable || writable;
+      free(old_info);
+    }
     // Malloc new page_info
     // Fill in page_info
     // Things to fill:
@@ -742,6 +758,7 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
     // memset(kpage + page_read_bytes, 0, page_zero_bytes);
 
     /* Advance. */
+    start += page_read_bytes;
     read_bytes -= page_read_bytes;
     zero_bytes -= page_zero_bytes;
     upage += PGSIZE;

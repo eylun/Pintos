@@ -49,6 +49,7 @@ void vm_init(void)
 void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
 {
   ASSERT(check_page_alignment(upage));
+  // printf("I have arrived in vm_alloc\n");
   start_vm_access();
   struct frame *new_frame = ft_request_frame(flag, upage);
   if (!new_frame)
@@ -77,7 +78,11 @@ void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
    non-NULL pointer so the exception handler will not kill the process. */
 void *vm_page_fault(void *fault_addr, void *esp)
 {
-  printf("there is a page fault at : %x\n", fault_addr);
+  // printf("there is a page fault at : %x\n", fault_addr);
+  // if (fault_addr == 0)
+  // {
+  //   PANIC("WTF");
+  // }
   // Check if fault_addr is a key in this thread's SPT
   struct thread *cur = thread_current();
   void *aligned = pg_round_down(fault_addr);
@@ -97,32 +102,19 @@ void *vm_page_fault(void *fault_addr, void *esp)
   case PAGE_FILESYS:
     return load_file(page_info);
     break;
+  case PAGE_ZERO:
+    return vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage);
   default:
-    PANIC("lol wtf");
+    PANIC("This should not happen\n");
   }
-  // IF NOT, just return NULL
-  // IF it exists, check ENUM of page_info
-  // IMPLEMENT FILESYS (for lazy loading)
-}
-
-/* VM free page. The VM will search for the pointer provided in the frame table.
-   It will assert that the Search has to return something valid.
-   The VM will then remove this page from the frame table and the supplemental
-   page table of the thread that contains this page. */
-void vm_free_page(void *kpage)
-{
-  start_vm_access();
-  struct frame *frame = ft_search_frame(kpage);
-  ASSERT(frame); /* If the search fails, panic */
-  ft_destroy_frame(frame);
-  end_vm_access();
 }
 
 static void *load_file(struct page_info *page_info)
 {
+  // printf("I have started load_file, start:%d end: %d\n", page_info->page_read_bytes, page_info->page_zero_bytes);
   /* Get a new page of memory. */
-  void *kpage = vm_alloc_get_page(PAL_USER, page_info->upage);
-  if (kpage == NULL)
+  void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage);
+  if (!kpage)
   {
     return NULL;
   }
@@ -136,14 +128,27 @@ static void *load_file(struct page_info *page_info)
 
   /* Load data into the page. */
   start_filesys_access();
+  file_seek(page_info->file, page_info->start);
   if (file_read(page_info->file, kpage, page_info->page_read_bytes) != (int)page_info->page_read_bytes)
   {
     end_filesys_access();
     vm_free_page(kpage);
     return NULL;
   }
-  // printf("%x\n", kpage);
   end_filesys_access();
   memset(kpage + page_info->page_read_bytes, 0, page_info->page_zero_bytes);
   return kpage;
+}
+
+/* VM free page. The VM will search for the pointer provided in the frame table.
+   It will assert that the Search has to return something valid.
+   The VM will then remove this page from the frame table and the supplemental
+   page table of the thread that contains this page. */
+void vm_free_page(void *kpage)
+{
+  start_vm_access();
+  struct frame *frame = ft_search_frame(kpage);
+  ASSERT(frame); /* If the search fails, panic */
+  ft_destroy_frame(frame);
+  end_vm_access();
 }

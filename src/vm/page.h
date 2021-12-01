@@ -19,6 +19,7 @@ struct page_info
   void *kpage; /* Address of the page in kernel memory */
   size_t page_read_bytes;
   size_t page_zero_bytes;
+  off_t start;
   bool writable;
   struct file *file;
   struct hash_elem elem;        /* Used to store the page in the process's supplemental page table */
