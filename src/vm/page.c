@@ -1,5 +1,6 @@
 #include <string.h>
 #include "vm/page.h"
+#include "vm/frame.h"
 #include "threads/palloc.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
@@ -74,6 +75,11 @@ struct page_info *sp_search_page_info(void *upage)
 void sp_destroy_page_info(struct hash_elem *e, void *aux UNUSED)
 {
   struct page_info *to_remove = hash_entry(e, struct page_info, elem);
+  struct frame *frame_to_free = ft_search_frame(to_remove->kpage);
+  if (frame_to_free)
+  {
+    ft_destroy_frame(to_remove->kpage);
+  }
   hash_delete(&thread_current()->sp_table, e);
   free(to_remove);
 }

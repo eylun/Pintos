@@ -4,6 +4,9 @@
 #include <hash.h>
 #include <threads/palloc.h>
 
+#define ZERO 0
+#define NO_ZERO 1
+
 /* Initialize the VM controller */
 void vm_init(void);
 

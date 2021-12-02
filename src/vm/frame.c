@@ -84,6 +84,10 @@ struct frame *ft_search_frame(void *kpage)
   dummy_frame.kpage = kpage;
   e = hash_find(&ft, &dummy_frame.elem);
   end_ft_access();
+  if (!e)
+  {
+    return NULL;
+  }
   return hash_entry(e, struct frame, elem);
 }
 

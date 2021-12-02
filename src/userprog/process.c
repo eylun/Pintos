@@ -374,6 +374,10 @@ void process_exit(void)
     }
   }
 
+  /* Completely destroy the thread's supplemental page table, freeing all
+     pages associated IF there are any */
+  sp_destroy_complete();
+
   /* If the thread also holds onto a file, free it */
   if (cur->file)
   {
@@ -686,77 +690,32 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
   file_seek(file, ofs);
   off_t start = ofs;
   end_filesys_access();
+  // printf("loading...\n");
   while (read_bytes > 0 || zero_bytes > 0)
   {
+    // printf("read_byte: %d, zero_byte: %d\n", read_bytes, zero_bytes);
     /* Calculate how to fill this page.
        We will read PAGE_READ_BYTES bytes from FILE
        and zero the final PAGE_ZERO_BYTES bytes. */
     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-    /* Check if virtual page already allocated */
     struct thread *t = thread_current();
+    /*Malloc new page_info
+      Fill in page_info
+      Things to fill:
+      1. upage
+      2. page_read_bytes -- page_zero_bytes = PGSIZE - page_read_bytes
+      3. writable */
     struct page_info *page_info = calloc(1, sizeof(struct page_info));
     page_info->file = file;
     page_info->page_status = PAGE_FILESYS;
     page_info->upage = upage;
     page_info->writable = writable;
     page_info->page_read_bytes = page_read_bytes;
-    page_info->page_zero_bytes = page_zero_bytes;
     page_info->start = start;
-    if (page_zero_bytes == PGSIZE)
-    {
-      page_info->page_status = PAGE_ZERO;
-    }
-    /* Insert the newly created page_info into this process' sp_table */
-    /* Insert page metadata into hash table through hash_replace due to GCC
-       complications where the same code can be inserted in the same segment */
-    struct hash_elem *old_e = hash_replace(&t->sp_table, &page_info->elem);
-    struct page_info *old_info;
-    /* If something has been replaced it means that this page_info was the old
-       info. Free it as it is no longer needed */
-    if (old_e)
-    {
-      old_info = hash_entry(old_e, struct page_info, elem);
-      page_info->writable = old_info->writable || writable;
-      free(old_info);
-    }
-    // Malloc new page_info
-    // Fill in page_info
-    // Things to fill:
-    //  1. kpage
-    //  2. upage
-    //  3. page_read_bytes
-    //  4. page_zero_bytes
-    //  5. writable
-
-    // Change vm_page_fault() in vm.c to handle EXEC page_infos
-    // Run the commented out code at the bottom for that to install pages
-    // Connect allocated frame to the page_info.
-
-    //   /* Get a new page of memory. */
-    //   kpage = palloc_get_page(PAL_USER);
-    //   if (kpage == NULL)
-    //   {
-    //     return false;
-    //   }
-
-    //   /* Add the page to the process's address space. */
-    //   if (!install_page(upage, kpage, writable))
-    //   {
-    //     palloc_free_page(kpage);
-    //     return false;
-    //   }
-    // }
-
-    // /* Load data into the page. */
-    // if (file_read(file, kpage, page_read_bytes) != (int)page_read_bytes)
-    // {
-    //   palloc_free_page(kpage);
-    //   return false;
-    // }
-    // memset(kpage + page_read_bytes, 0, page_zero_bytes);
-
+    // printf("addr: %x read: %d, zero: %d\n", upage, page_read_bytes, page_zero_bytes);
+    sp_insert_page_info(page_info);
     /* Advance. */
     start += page_read_bytes;
     read_bytes -= page_read_bytes;

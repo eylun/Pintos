@@ -119,12 +119,6 @@ kill(struct intr_frame *f)
 static void
 page_fault(struct intr_frame *f)
 {
-   /* Check if current thread is running a user process, if it is, give it
-      an exit code of -1. */
-   if (thread_current()->process)
-   {
-      thread_current()->process->exit_code = TID_ERROR;
-   }
    bool not_present; /* True: not-present page, false: writing r/o page. */
    bool write;       /* True: access was write, false: access was read. */
    bool user;        /* True: access by user, false: access by kernel. */
@@ -155,6 +149,12 @@ page_fault(struct intr_frame *f)
    /* Virtual Memory Implementation */
    if (!not_present || !vm_page_fault(fault_addr, f->esp))
    {
+      /* Check if current thread is running a user process, if it is, give it
+         an exit code of -1. */
+      if (thread_current()->process)
+      {
+         thread_current()->process->exit_code = TID_ERROR;
+      }
       kill(f);
    }
 }

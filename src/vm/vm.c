@@ -17,7 +17,7 @@
 /* Lock for accessing vm brain */
 static struct lock vm_lock;
 
-static void *load_file(struct page_info *);
+static void *load_file(struct page_info *, bool);
 
 void start_vm_access(void)
 {
@@ -96,25 +96,25 @@ void *vm_page_fault(void *fault_addr, void *esp)
   switch (page_info->page_status)
   {
   case PAGE_FILESYS:
-    return load_file(page_info);
+    return load_file(page_info, NO_ZERO);
     break;
   case PAGE_ZERO:
-    return vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage);
+    return load_file(page_info, ZERO);
   default:
     PANIC("This should not happen\n");
   }
 }
 
-static void *load_file(struct page_info *page_info)
+static void *load_file(struct page_info *page_info, bool non_zero)
 {
   // printf("I have started load_file, start:%d end: %d\n", page_info->page_read_bytes, page_info->page_zero_bytes);
+
   /* Get a new page of memory. */
   void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage);
   if (!kpage)
   {
     return NULL;
   }
-
   /* Add the page to the process's address space. */
   if (!install_page(page_info->upage, kpage, page_info->writable))
   {
@@ -123,15 +123,18 @@ static void *load_file(struct page_info *page_info)
   }
 
   /* Load data into the page. */
-  start_filesys_access();
-  file_seek(page_info->file, page_info->start);
-  if (file_read(page_info->file, kpage, page_info->page_read_bytes) != (int)page_info->page_read_bytes)
+  if (non_zero)
   {
+    start_filesys_access();
+    file_seek(page_info->file, page_info->start);
+    if (file_read(page_info->file, kpage, page_info->page_read_bytes) != (int)page_info->page_read_bytes)
+    {
+      end_filesys_access();
+      vm_free_page(kpage);
+      return NULL;
+    }
     end_filesys_access();
-    vm_free_page(kpage);
-    return NULL;
   }
-  end_filesys_access();
   /* The value page_zero_bytes is equal to PGSIZE - page_info->page_read_bytes */
   memset(kpage + page_info->page_read_bytes, 0, PGSIZE - page_info->page_read_bytes);
   return kpage;
