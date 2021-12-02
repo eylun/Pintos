@@ -6,14 +6,18 @@
 #include "threads/vaddr.h"
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
+#include "userprog/syscall.h"
 #include "filesys/file.h"
 #include "string.h"
 #include "vm/vm.h"
 #include "vm/frame.h"
 #include "vm/swap.h"
+#include "vm/page.h"
 
 /* Lock for accessing vm brain */
 static struct lock vm_lock;
+
+static void *load_file(struct page_info *, bool);
 
 void start_vm_access(void)
 {
@@ -45,6 +49,7 @@ void vm_init(void)
 void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
 {
   ASSERT(check_page_alignment(upage));
+  // printf("I have arrived in vm_alloc\n");
   start_vm_access();
   struct frame *new_frame = ft_request_frame(flag, upage);
   if (!new_frame)
@@ -73,7 +78,66 @@ void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
    non-NULL pointer so the exception handler will not kill the process. */
 void *vm_page_fault(void *fault_addr, void *esp)
 {
-  return NULL;
+  // printf("there is a page fault at : %x\n", fault_addr);
+  // if (fault_addr == 0)
+  // {
+  //   PANIC("WTF");
+  // }
+  // Check if fault_addr is a key in this thread's SPT
+  struct thread *cur = thread_current();
+  void *aligned = pg_round_down(fault_addr);
+  /* Faulted address does not have a value mapped to it in the sp_table
+     Return NULL to let exception.c kill this frame */
+  struct page_info *page_info = sp_search_page_info(aligned);
+  if (!page_info)
+  {
+    return NULL;
+  }
+  switch (page_info->page_status)
+  {
+  case PAGE_FILESYS:
+    return load_file(page_info, NO_ZERO);
+    break;
+  case PAGE_ZERO:
+    return load_file(page_info, ZERO);
+  default:
+    PANIC("This should not happen\n");
+  }
+}
+
+static void *load_file(struct page_info *page_info, bool non_zero)
+{
+  // printf("I have started load_file, start:%d end: %d\n", page_info->page_read_bytes, page_info->page_zero_bytes);
+
+  /* Get a new page of memory. */
+  void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage);
+  if (!kpage)
+  {
+    return NULL;
+  }
+  /* Add the page to the process's address space. */
+  if (!install_page(page_info->upage, kpage, page_info->writable))
+  {
+    vm_free_page(kpage);
+    return NULL;
+  }
+
+  /* Load data into the page. */
+  if (non_zero)
+  {
+    start_filesys_access();
+    file_seek(page_info->file, page_info->start);
+    if (file_read(page_info->file, kpage, page_info->page_read_bytes) != (int)page_info->page_read_bytes)
+    {
+      end_filesys_access();
+      vm_free_page(kpage);
+      return NULL;
+    }
+    end_filesys_access();
+  }
+  /* The value page_zero_bytes is equal to PGSIZE - page_info->page_read_bytes */
+  memset(kpage + page_info->page_read_bytes, 0, PGSIZE - page_info->page_read_bytes);
+  return kpage;
 }
 
 /* VM free page. The VM will search for the pointer provided in the frame table.

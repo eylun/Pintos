@@ -42,4 +42,7 @@ struct process
   struct hash fd_table;        /* Hash table to store file descriptors */
   int next_fd;                 /* Stores the next number to use for the file descriptor */
 };
+
+bool install_page(void *, void *, bool);
+
 #endif /* userprog/process.h */

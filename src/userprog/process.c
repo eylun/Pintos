@@ -20,12 +20,14 @@
 #include "threads/vaddr.h"
 #include "lib/kernel/hash.h"
 #include "vm/vm.h"
+#include "vm/page.h"
 
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
 static void free_setup(struct setup_data *);
 static void free_hash_file(struct hash_elem *, void *UNUSED);
 
+bool install_page(void *upage, void *kpage, bool writable);
 unsigned fd_table_hash_func(const struct hash_elem *e, void *aux);
 bool fd_table_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux);
 
@@ -170,6 +172,9 @@ start_process(void *_setup)
   bool success;
 
   struct setup_data *setup = _setup;
+
+  /* Initialize supplemental page table */
+  sp_init();
 
   /* Initialize interrupt frame and load executable. */
   memset(&if_, 0, sizeof if_);
@@ -368,6 +373,10 @@ void process_exit(void)
       free(p);
     }
   }
+
+  /* Completely destroy the thread's supplemental page table, freeing all
+     pages associated IF there are any */
+  sp_destroy_complete();
 
   /* If the thread also holds onto a file, free it */
   if (cur->file)
@@ -607,8 +616,6 @@ done:
 
 /* load() helpers. */
 
-static bool install_page(void *upage, void *kpage, bool writable);
-
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
 static bool
@@ -681,46 +688,36 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
   ASSERT(ofs % PGSIZE == 0);
   start_filesys_access();
   file_seek(file, ofs);
+  off_t start = ofs;
   end_filesys_access();
+  // printf("loading...\n");
   while (read_bytes > 0 || zero_bytes > 0)
   {
+    // printf("read_byte: %d, zero_byte: %d\n", read_bytes, zero_bytes);
     /* Calculate how to fill this page.
        We will read PAGE_READ_BYTES bytes from FILE
        and zero the final PAGE_ZERO_BYTES bytes. */
     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-    /* Check if virtual page already allocated */
     struct thread *t = thread_current();
-    uint8_t *kpage = pagedir_get_page(t->pagedir, upage);
-
-    if (kpage == NULL)
-    {
-
-      /* Get a new page of memory. */
-      kpage = palloc_get_page(PAL_USER);
-      if (kpage == NULL)
-      {
-        return false;
-      }
-
-      /* Add the page to the process's address space. */
-      if (!install_page(upage, kpage, writable))
-      {
-        palloc_free_page(kpage);
-        return false;
-      }
-    }
-
-    /* Load data into the page. */
-    if (file_read(file, kpage, page_read_bytes) != (int)page_read_bytes)
-    {
-      palloc_free_page(kpage);
-      return false;
-    }
-    memset(kpage + page_read_bytes, 0, page_zero_bytes);
-
+    /*Malloc new page_info
+      Fill in page_info
+      Things to fill:
+      1. upage
+      2. page_read_bytes -- page_zero_bytes = PGSIZE - page_read_bytes
+      3. writable */
+    struct page_info *page_info = calloc(1, sizeof(struct page_info));
+    page_info->file = file;
+    page_info->page_status = PAGE_FILESYS;
+    page_info->upage = upage;
+    page_info->writable = writable;
+    page_info->page_read_bytes = page_read_bytes;
+    page_info->start = start;
+    // printf("addr: %x read: %d, zero: %d\n", upage, page_read_bytes, page_zero_bytes);
+    sp_insert_page_info(page_info);
     /* Advance. */
+    start += page_read_bytes;
     read_bytes -= page_read_bytes;
     zero_bytes -= page_zero_bytes;
     upage += PGSIZE;
@@ -757,8 +754,7 @@ setup_stack(void **esp)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
-install_page(void *upage, void *kpage, bool writable)
+bool install_page(void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current();
 

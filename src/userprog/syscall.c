@@ -98,6 +98,7 @@ syscall_handler(struct intr_frame *f)
   /* All syscall handlers work under the assumption that the
      arguments have been validated. This is safe to assume because validation
      occurs right before the calling of the handlers */
+  // printf("syscall: %d\n", *esp);
   syscalls[*esp](f);
 }
 
@@ -124,7 +125,10 @@ static void validate_memory(void *pointer, int arguments)
     if (!is_user_vaddr(pointer + count) ||
         !pagedir_get_page(thread_current()->pagedir, pointer + count))
     {
-      exit(EXIT_CODE);
+      if (!vm_page_fault(pointer, NULL))
+      {
+        exit(EXIT_CODE);
+      }
     }
   }
 }
@@ -317,7 +321,7 @@ static void sys_read(struct intr_frame *f)
   unsigned size = *(unsigned *)(esp + 3);
 
   validate_memory((void *)buffer, 1);
-  validate_buffer((void *)buffer, size);
+  // validate_buffer((void *)buffer, size);
 
   int ret = EXIT_CODE;
 
