@@ -121,7 +121,10 @@ struct thread
    struct hash sp_table;      /* Supplemental Page Table */
    struct lock sp_table_lock; /* Lock for synchronization of the supplemental page table */
    struct hash mmap_table;    /* Memory Mapped Files Table */
+<<<<<<< HEAD
    mapid_t next_mmapid;       /* Stores the next number to use for the memory mapped file id */
+=======
+>>>>>>> feat: added mmap_table field to struct thread
 #endif
    /* Owned by thread.c. */
    unsigned magic; /* Detects stack overflow. */
