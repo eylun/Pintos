@@ -67,9 +67,12 @@ void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
   return new_frame->kpage;
 }
 
+/* Function to check if a pointer access is a valid stack access */
 bool is_stack_access(void *fault_addr, void *esp)
 {
   unsigned long offset = esp - fault_addr;
+  /* Checks if esp is below the fault or if the offset is either 4 or 32. 
+  Additionally, checks if the fault address occured in the correct zone between PHYS_BASE - STACK_MAX_SPACE and PHYS_BASE*/
   return (esp <= fault_addr || offset == PUSH_OFFSET || offset == PUSHA_OFFSET) && (PHYS_BASE - STACK_MAX_SPACE <= fault_addr && PHYS_BASE > fault_addr);
 }
 
@@ -165,6 +168,7 @@ void vm_free_page(void *kpage)
   end_vm_access();
 }
 
+/* Grows the stack by mapping a zeroed page at upage */
 void *vm_grow_stack(void *upage)
 {
   void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, upage);
