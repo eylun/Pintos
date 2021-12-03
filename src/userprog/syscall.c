@@ -52,13 +52,15 @@ static const handler syscalls[] = {
     &sys_seek,     /* Change position in a file. */
     &sys_tell,     /* Report current position in a file. */
     &sys_close,    /* Close a file. */
+    &sys_mmap,     /* Maps the file to virtual pages. */
+    &sys_mumap     /* Unmaps the file from the virtual pages. */
 };
 
 /* List of number of arguments for each system call. The values are
    appropriately positioned to line up with the functions inside the syscalls
    list of function pointers */
 static const int sysarguments[] = {
-    0, 1, 1, 1, 2, 1, 1, 1, 3, 3, 2, 1, 1};
+    0, 1, 1, 1, 2, 1, 1, 1, 3, 3, 2, 1, 1, 2, 1};
 
 static struct lock filesys_lock;
 
@@ -476,4 +478,21 @@ static void sys_close(struct intr_frame *f)
       free(open_descriptor);
     }
   }
+}
+
+static void sys_mmap(struct intr_frame *f)
+{
+  int *esp = f->esp;
+  int fd = *(esp + 1);
+  void *addr = (void *)(esp + 2);
+
+  /* Exit returns nothing */
+}
+
+static void sys_mumap(struct intr_frame *f)
+{
+  int *esp = f->esp;
+  int status = *(esp + 1);
+
+  /* Exit returns nothing */
 }
