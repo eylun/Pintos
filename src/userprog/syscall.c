@@ -513,7 +513,6 @@ static void sys_mmap(struct intr_frame *f)
     exit(EXIT_CODE);
   }
 
-  /* Checks that addr is page aligned */
   if (pg_ofs(addr) != 0)
   {
     // PANIC("help me please");
@@ -540,8 +539,8 @@ static void sys_mmap(struct intr_frame *f)
     return;
   }
 
-  /* Memory map stays even when original file is closed or removed.
-     Need to use own file handle to the file. Done by reopening the file. */
+  /* Memory map stays even when original file is closed or removed. */
+
   start_filesys_access();
   struct file *file = file_reopen(open_descriptor->file);
   off_t length = file_length(file);
@@ -560,7 +559,6 @@ static void sys_mmap(struct intr_frame *f)
     pages_to_map++;
   }
 
-  /* Checks that the range of pages to be mapped does not overlap an existing set of mapped pages */
   for (int i = 0; i < pages_to_map; i++)
   {
     if (sp_search_page_info(addr + i * PGSIZE))
@@ -570,7 +568,6 @@ static void sys_mmap(struct intr_frame *f)
       return;
     }
   }
-
   struct thread *cur = thread_current();
 
   struct mmap_entry *entry = malloc(sizeof(struct mmap_entry));
