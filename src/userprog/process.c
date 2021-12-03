@@ -731,18 +731,22 @@ static bool
 setup_stack(void **esp)
 {
   uint8_t *kpage, *upage = (uint8_t *)PHYS_BASE - PGSIZE;
-  bool success = false;
 
-  kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, upage);
-  if (kpage != NULL)
+  // kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, upage);
+  // if (kpage != NULL)
+  // {
+  //   success = install_page(upage, kpage, true);
+  //   if (success)
+  //     *esp = PHYS_BASE;
+  //   else
+  //     vm_free_page(kpage);
+  // }
+  if (vm_grow_stack(upage))
   {
-    success = install_page(upage, kpage, true);
-    if (success)
-      *esp = PHYS_BASE;
-    else
-      vm_free_page(kpage);
+    *esp = PHYS_BASE;
+    return true;
   }
-  return success;
+  return false;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel

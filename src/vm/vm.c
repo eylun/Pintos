@@ -67,6 +67,15 @@ void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
   return new_frame->kpage;
 }
 
+/* Function to check if a pointer access is a valid stack access */
+bool is_stack_access(void *fault_addr, void *esp)
+{
+  unsigned long offset = esp - fault_addr;
+  /* Checks if esp is below the fault or if the offset is either 4 or 32. 
+  Additionally, checks if the fault address occured in the correct zone between PHYS_BASE - STACK_MAX_SPACE and PHYS_BASE*/
+  return (esp <= fault_addr || offset == PUSH_OFFSET || offset == PUSHA_OFFSET) && (PHYS_BASE - STACK_MAX_SPACE <= fault_addr && PHYS_BASE > fault_addr);
+}
+
 /* VM page fault handler. Called when a page fault occurs where a page
    is present.
    This function will check the memory reference of the faulted thread's
@@ -86,6 +95,12 @@ void *vm_page_fault(void *fault_addr, void *esp)
   // Check if fault_addr is a key in this thread's SPT
   struct thread *cur = thread_current();
   void *aligned = pg_round_down(fault_addr);
+
+  /* Check if this page fault is a stack growth fault */
+  if (is_stack_access(fault_addr, esp))
+  {
+    return vm_grow_stack(aligned);
+  }
   /* Faulted address does not have a value mapped to it in the sp_table
      Return NULL to let exception.c kill this frame */
   struct page_info *page_info = sp_search_page_info(aligned);
@@ -151,4 +166,18 @@ void vm_free_page(void *kpage)
   ASSERT(frame); /* If the search fails, panic */
   ft_destroy_frame(frame);
   end_vm_access();
+}
+
+/* Grows the stack by mapping a zeroed page at upage */
+void *vm_grow_stack(void *upage)
+{
+  void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, upage);
+  if (kpage != NULL)
+  {
+    if (!install_page(upage, kpage, true))
+    {
+      vm_free_page(kpage);
+    }
+  }
+  return kpage;
 }
