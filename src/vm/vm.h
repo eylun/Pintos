@@ -7,6 +7,8 @@
 #define ZERO 0
 #define NO_ZERO 1
 
+#define STACK_MAX_SPACE 1024 * 8000 /* 1kb * 8000 = 8MB */
+
 /* Initialize the VM controller */
 void vm_init(void);
 
@@ -18,5 +20,8 @@ void *vm_page_fault(void *, void *);
 
 /* Function to call for freeing a VM page */
 void vm_free_page(void *);
+
+/* Stack growing */
+void *vm_grow_stack(void *);
 
 #endif /* vm/vm.h */

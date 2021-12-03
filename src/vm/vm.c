@@ -86,6 +86,13 @@ void *vm_page_fault(void *fault_addr, void *esp)
   // Check if fault_addr is a key in this thread's SPT
   struct thread *cur = thread_current();
   void *aligned = pg_round_down(fault_addr);
+
+  /* Check if this page fault is a stack growth fault */
+  unsigned long offset = esp - fault_addr;
+  if ((esp <= fault_addr || offset == 4 || offset == 32) && (PHYS_BASE - STACK_MAX_SPACE <= fault_addr && PHYS_BASE > fault_addr))
+  {
+    return vm_grow_stack(aligned);
+  }
   /* Faulted address does not have a value mapped to it in the sp_table
      Return NULL to let exception.c kill this frame */
   struct page_info *page_info = sp_search_page_info(aligned);
@@ -151,4 +158,19 @@ void vm_free_page(void *kpage)
   ASSERT(frame); /* If the search fails, panic */
   ft_destroy_frame(frame);
   end_vm_access();
+}
+
+void *vm_grow_stack(void *upage)
+{
+  void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, upage);
+  bool success;
+  if (kpage != NULL)
+  {
+    success = install_page(upage, kpage, true);
+    if (!success)
+    {
+      vm_free_page(kpage);
+    }
+  }
+  return kpage;
 }
