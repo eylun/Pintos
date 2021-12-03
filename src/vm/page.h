@@ -16,7 +16,6 @@ enum page_status
 struct page_info
 {
   void *upage;                  /* Address of the page in user virtual memory */
-  void *kpage;                  /* Address of the page in kernel memory */
   size_t page_read_bytes;       /* Number of bytes to read (For filesys only) */
   off_t start;                  /* Lazy loading offset (For filesys only) */
   bool writable;                /* File writable flag (For filesys only) */

@@ -9,8 +9,8 @@
 #include "userprog/syscall.h"
 #include "filesys/file.h"
 #include "string.h"
-#include "vm/vm.h"
 #include "vm/frame.h"
+#include "vm/vm.h"
 #include "vm/swap.h"
 #include "vm/page.h"
 
@@ -31,7 +31,9 @@ void end_vm_access(void)
 
 void vm_init(void)
 {
+  /* Initialize vm lock */
   lock_init(&vm_lock);
+  /* Initialize frame table */
   ft_init();
 }
 
@@ -46,7 +48,7 @@ void vm_init(void)
     3b. Request for a frame again (ONLY IF SWAPPED)
     4b. Asks the frame table to insert the frame.
     5b. Returns the pointer to the page. */
-void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
+void *vm_alloc_get_page(enum palloc_flags flag, void *upage, enum frame_types type)
 {
   ASSERT(check_page_alignment(upage));
   // printf("I have arrived in vm_alloc\n");
@@ -63,6 +65,7 @@ void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
        the ASSERT call. */
     ASSERT(new_frame != NULL);
   }
+  new_frame->type = type;
   end_vm_access();
   return new_frame->kpage;
 }
@@ -78,7 +81,6 @@ void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
    non-NULL pointer so the exception handler will not kill the process. */
 void *vm_page_fault(void *fault_addr, void *esp)
 {
-  // printf("there is a page fault at : %x\n", fault_addr);
   // if (fault_addr == 0)
   // {
   //   PANIC("WTF");
@@ -93,6 +95,8 @@ void *vm_page_fault(void *fault_addr, void *esp)
   {
     return NULL;
   }
+
+  // printf("there is a page fault at : %x, %d\n", fault_addr, page_info->page_status);
   switch (page_info->page_status)
   {
   case PAGE_FILESYS:
@@ -107,10 +111,23 @@ void *vm_page_fault(void *fault_addr, void *esp)
 
 static void *load_file(struct page_info *page_info, bool non_zero)
 {
-  // printf("I have started load_file, start:%d end: %d\n", page_info->page_read_bytes, page_info->page_zero_bytes);
-
-  /* Get a new page of memory. */
-  void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage);
+  void *kpage;
+  struct frame *frame = frame_list_find_upage(page_info->upage);
+  // printf("the frame is: %x with upage :%x\n", frame, page_info->upage);
+  /* If kpage is NULL, get a new page of memory.
+     If kpage is not NULL, that means it has already been allocated in the past.
+     */
+  if (frame)
+  {
+    // printf("frame exists: %x\n", frame);
+    if (!install_page(page_info->upage, frame->kpage, page_info->writable))
+    {
+      return NULL;
+    }
+    page_info->frame = frame;
+    return frame->kpage;
+  }
+  kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage, FILE);
   if (!kpage)
   {
     return NULL;
