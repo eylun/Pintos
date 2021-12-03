@@ -56,7 +56,11 @@ static const handler syscalls[] = {
     &sys_tell,     /* Report current position in a file. */
     &sys_close,    /* Close a file. */
     &sys_mmap,     /* Maps the file to virtual pages. */
+<<<<<<< HEAD
     &sys_munmap    /* Unmaps the file from the virtual pages. */
+=======
+    &sys_mumap /* Unmaps the file from the virtual pages. */
+>>>>>>> feat: added syscalls handler for mmap and munmap
 };
 
 /* List of number of arguments for each system call. The values are
@@ -671,4 +675,12 @@ static void sys_munmap(struct intr_frame *f)
   end_filesys_access();
 
   free(entry);
+}
+
+static void sys_mumap(struct intr_frame *f)
+{
+  int *esp = f->esp;
+  int status = *(esp + 1);
+
+  /* Exit returns nothing */
 }
