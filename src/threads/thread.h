@@ -119,6 +119,7 @@ struct thread
 #ifdef VM
    struct hash sp_table;      /* Supplemental Page Table */
    struct lock sp_table_lock; /* Lock for synchronization of the supplemental page table */
+   struct hash mmap_table;    /* Memory Mapped Files Table */
 #endif
    /* Owned by thread.c. */
    unsigned magic; /* Detects stack overflow. */
