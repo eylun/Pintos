@@ -7,6 +7,7 @@
 #include "lib/kernel/hash.h"
 
 typedef int pid_t;
+#define MIN_FD 2
 
 tid_t process_execute(const char *file_name);
 int process_wait(tid_t);
