@@ -118,7 +118,7 @@ tid_t process_execute(const char *file_name)
   hash_init(&p->fd_table, &fd_table_hash_func, &fd_table_less_func, NULL);
 
   /* Sets the first fd to 2 since 0 and 1 are reserved for the console. */
-  p->next_fd = 2;
+  p->next_fd = MIN_FD;
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(fn_copy, PRI_DEFAULT, start_process, setup);
