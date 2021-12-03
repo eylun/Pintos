@@ -7,6 +7,9 @@
 #define ZERO 0
 #define NO_ZERO 1
 
+#define PUSH_OFFSET 4
+#define PUSHA_OFFSET 32
+
 #define STACK_MAX_SPACE 1024 * 8000 /* 1kb * 8000 = 8MB */
 
 /* Initialize the VM controller */

@@ -67,6 +67,12 @@ void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
   return new_frame->kpage;
 }
 
+bool is_stack_access(void *fault_addr, void *esp)
+{
+  unsigned long offset = esp - fault_addr;
+  return (esp <= fault_addr || offset == PUSH_OFFSET || offset == PUSHA_OFFSET) && (PHYS_BASE - STACK_MAX_SPACE <= fault_addr && PHYS_BASE > fault_addr);
+}
+
 /* VM page fault handler. Called when a page fault occurs where a page
    is present.
    This function will check the memory reference of the faulted thread's
@@ -88,8 +94,7 @@ void *vm_page_fault(void *fault_addr, void *esp)
   void *aligned = pg_round_down(fault_addr);
 
   /* Check if this page fault is a stack growth fault */
-  unsigned long offset = esp - fault_addr;
-  if ((esp <= fault_addr || offset == 4 || offset == 32) && (PHYS_BASE - STACK_MAX_SPACE <= fault_addr && PHYS_BASE > fault_addr))
+  if (is_stack_access(fault_addr, esp))
   {
     return vm_grow_stack(aligned);
   }
@@ -163,11 +168,9 @@ void vm_free_page(void *kpage)
 void *vm_grow_stack(void *upage)
 {
   void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, upage);
-  bool success;
   if (kpage != NULL)
   {
-    success = install_page(upage, kpage, true);
-    if (!success)
+    if (!install_page(upage, kpage, true))
     {
       vm_free_page(kpage);
     }
