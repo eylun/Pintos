@@ -292,6 +292,8 @@ static void sys_open(struct intr_frame *f)
   f->eax = fd;
 }
 
+/* Returns a hash_elem equal to the file_descriptor's hash_elem (fd) from
+  the current process's fd_table or null pointer if no such element exists */
 static struct hash_elem *get_elem(struct file_descriptor *descriptor, int fd)
 {
   struct thread *current_thread = thread_current();
@@ -480,11 +482,88 @@ static void sys_close(struct intr_frame *f)
   }
 }
 
+/* Maps the entire file open as fd into the process's virtual address space */
+/* Failure cases:
+  - fd has length of zero bytes
+  - addr is not page aligned
+  - range of pages mapped overlaps an existing set of mapped pages (incld. stack and pages mapped during load)
+  - addr == 0, fd == 0, fd == 1 */
+
 static void sys_mmap(struct intr_frame *f)
 {
   int *esp = f->esp;
   int fd = *(esp + 1);
   void *addr = (void *)(esp + 2);
+
+  /* Pintos assumes virtual page 0 is not mapped and fd = 0 and fd = 1 is not mappable */
+  if (addr == 0 || fd == 0 || fd == 1)
+  {
+    f->eax = -1;
+    return;
+  }
+
+  /* Checks that addr is a user virtual address */
+  if (!is_user_vaddr(addr))
+  {
+    exit(EXIT_CODE);
+  }
+
+  /* Checks that addr is page aligned */
+  if (pg_ofs(addr) != 0)
+  {
+    f->eax = -1;
+    return;
+  }
+
+  /* Access file corresponding to the given fd */
+  /* Returns -1 if the given file_descriptor is not found in the process's fd_table */
+  struct file_descriptor descriptor;
+  struct hash_elem *elem = get_elem(&descriptor, fd);
+
+  if (elem == NULL)
+  {
+    f->eax = -1;
+    return;
+  }
+
+  struct file_descriptor *open_descriptor = hash_entry(elem, struct file_descriptor, hash_elem);
+  if (open_descriptor == NULL)
+  {
+    f->eax = -1;
+    return;
+  }
+
+  start_filesys_access();
+  int file_size = file_length(open_descriptor->file);
+  end_filesys_access();
+
+  /* Returns -1 if file has length of zero bytes */
+  if (file_size == 0)
+  {
+    f->eax = -1;
+    return;
+  }
+
+  int pages_to_map = file_size / PGSIZE;
+  if (file_size % PGSIZE)
+  {
+    pages_to_map++;
+  }
+
+  /* Checks that the range of pages to be mapped does not overlap an existing set of mapped pages */
+  for (int i = 0; i < pages_to_map; i++)
+  {
+    if (sp_search_page_info(addr + i * PGSIZE))
+    {
+      f->eax = -1;
+      return;
+    }
+  }
+
+  /* TODO:
+  - initialize memory-mapping data structure
+  - add the mapped entries to sp_table
+  - return appropriate mapping id */
 
   /* Exit returns nothing */
 }
