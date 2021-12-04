@@ -4,13 +4,10 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "lib/kernel/hash.h"
-<<<<<<< HEAD
 #include "userprog/syscall.h"
-=======
->>>>>>> feat: mmap_table initialization functions
 
-    static unsigned
-    mmap_table_hash_func(const struct hash_elem *, void *UNUSED);
+static unsigned
+mmap_table_hash_func(const struct hash_elem *, void *UNUSED);
 bool mmap_table_less_func(const struct hash_elem *,
                           const struct hash_elem *, void *UNUSED);
 
@@ -18,7 +15,6 @@ void mmap_init(void)
 {
     struct thread *cur = thread_current();
     hash_init(&cur->mmap_table, mmap_table_hash_func, mmap_table_less_func, NULL);
-<<<<<<< HEAD
     cur->next_mmapid = 0;
 }
 
@@ -41,15 +37,6 @@ struct mmap_entry *mmap_search_mapping(struct hash *mmap_table, mapid_t mapid)
     return hash_entry(e, struct mmap_entry, hash_elem);
 };
 
-=======
-}
-
-/* TODO: Implement Controller Functions
-struct mmap_entry *mmap_search_mapping(void *);
-void mmap_insert_mapping(struct mmap_entry *);
-void mmap_destroy_complete(void); */
-
->>>>>>> feat: mmap_table initialization functions
 static unsigned mmap_table_hash_func(const struct hash_elem *e, void *aux UNUSED)
 {
     const struct mmap_entry *mapping = hash_entry(e, struct mmap_entry, hash_elem);
@@ -62,7 +49,6 @@ bool mmap_table_less_func(const struct hash_elem *e1,
     return hash_entry(e1, struct mmap_entry, hash_elem)->mapid <
            hash_entry(e2, struct mmap_entry, hash_elem)->mapid;
 }
-<<<<<<< HEAD
 
 void mmap_write_back_data(struct mmap_entry *entry, void *src, size_t offset, size_t length)
 {
@@ -71,5 +57,3 @@ void mmap_write_back_data(struct mmap_entry *entry, void *src, size_t offset, si
     file_write(entry->file, src, length);
     end_filesys_access();
 }
-=======
->>>>>>> feat: mmap_table initialization functions

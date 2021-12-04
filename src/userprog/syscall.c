@@ -630,7 +630,14 @@ static void sys_mmap(struct intr_frame *f)
 
     void *uaddr = entry->uaddr;
 
+<<<<<<< HEAD
     struct hash *sp_table = &thread_current()->sp_table;
+=======
+static void sys_munmap(struct intr_frame *f)
+{
+  int *esp = f->esp;
+  int status = *(esp + 1);
+>>>>>>> feat: added handlers for mmap and munmap in syscalls
 
     for (int i = 0; i < num_pages; i++)
     {
