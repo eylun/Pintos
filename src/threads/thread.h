@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <hash.h>
 #include "threads/synch.h"
+#include "vm/mmap.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -120,6 +121,7 @@ struct thread
    struct hash sp_table;      /* Supplemental Page Table */
    struct lock sp_table_lock; /* Lock for synchronization of the supplemental page table */
    struct hash mmap_table;    /* Memory Mapped Files Table */
+   mapid_t next_mmapid;       /* Stores the next number to use for the memory mapped file id */
 #endif
    /* Owned by thread.c. */
    unsigned magic; /* Detects stack overflow. */
