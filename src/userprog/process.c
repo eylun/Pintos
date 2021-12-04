@@ -176,6 +176,9 @@ start_process(void *_setup)
   /* Initialize supplemental page table */
   sp_init();
 
+  /* Initialize mmap_table */
+  mmap_init();
+
   /* Initialize interrupt frame and load executable. */
   memset(&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
