@@ -33,6 +33,8 @@ static void sys_write(struct intr_frame *);
 static void sys_seek(struct intr_frame *);
 static void sys_tell(struct intr_frame *);
 static void sys_close(struct intr_frame *);
+static void sys_mmap(struct intr_frame *);
+static void sys_munmap(struct intr_frame *);
 
 /* List of function pointers to syscalls, handler is defined in syscall.h.
    Each function is appropriately positioned at the syscall value which it is
@@ -52,7 +54,7 @@ static const handler syscalls[] = {
     &sys_tell,     /* Report current position in a file. */
     &sys_close,    /* Close a file. */
     &sys_mmap,     /* Maps the file to virtual pages. */
-    &sys_mumap     /* Unmaps the file from the virtual pages. */
+    &sys_munmap    /* Unmaps the file from the virtual pages. */
 };
 
 /* List of number of arguments for each system call. The values are
@@ -555,7 +557,7 @@ static void sys_mmap(struct intr_frame *f)
   /* Exit returns nothing */
 }
 
-static void sys_mumap(struct intr_frame *f)
+static void sys_munmap(struct intr_frame *f)
 {
   int *esp = f->esp;
   int status = *(esp + 1);
