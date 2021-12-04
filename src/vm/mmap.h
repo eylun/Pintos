@@ -17,7 +17,7 @@ struct mmap_entry
 void mmap_init(void);
 
 /* Controller Functions */
-struct mmap_entry *mmap_search_mapping(void *);
+struct mmap_entry *mmap_search_mapping(struct hash *mmap_table, mapid_t mapid);
 void mmap_insert_mapping(struct mmap_entry *);
 void mmap_destroy_complete(void);
 
