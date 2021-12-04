@@ -539,11 +539,11 @@ static void sys_mmap(struct intr_frame *f)
     return;
   }
 
-  /* Memory map stays even when original file is closed or removed. */
-
+  /* Memory map stays even when original file is closed or removed.
+     Need to use own file handle to the file. Done by reopening the file. */
   start_filesys_access();
   struct file *file = file_reopen(open_descriptor->file);
-  off_t length = file_length(file);
+  int file_size = file_length(file);
   end_filesys_access();
 
   /* Returns -1 if file has length of zero bytes */
