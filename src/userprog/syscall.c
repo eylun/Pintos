@@ -602,7 +602,6 @@ static void sys_mmap(struct intr_frame *f)
   f->eax = entry->mapid;
 }
 
-/* TODO: Implement sys_munmap and create helper functions */
 static void sys_munmap(struct intr_frame *f)
 {
   int *esp = f->esp;
