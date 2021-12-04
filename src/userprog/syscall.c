@@ -13,6 +13,7 @@
 #include "lib/kernel/hash.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "vm/mmap.h"
 #include "vm/page.h"
 
 typedef void (*handler)(struct intr_frame *);
@@ -527,6 +528,7 @@ static void sys_mmap(struct intr_frame *f)
     f->eax = -1;
     return;
   }
+  /* TODO: Create a function to retrieve file_descriptor given fd */
 
   struct file_descriptor *open_descriptor = hash_entry(elem, struct file_descriptor, hash_elem);
   if (open_descriptor == NULL)
@@ -535,8 +537,11 @@ static void sys_mmap(struct intr_frame *f)
     return;
   }
 
+  /* Memory map stays even when original file is closed or removed.
+     Need to use own file handle to the file. Done by reopening the file. */
   start_filesys_access();
-  int file_size = file_length(open_descriptor->file);
+  struct file *file = file_reopen(open_descriptor->file);
+  int file_size = file_length(file);
   end_filesys_access();
 
   /* Returns -1 if file has length of zero bytes */
@@ -565,15 +570,92 @@ static void sys_mmap(struct intr_frame *f)
   /* TODO:
   - initialize memory-mapping data structure
   - add the mapped entries to sp_table
-  - return appropriate mapping id */
+  - return appropriate mapping id 
+  - create MACRO for -1 */
 
-  /* Exit returns nothing */
+  struct thread *cur = thread_current();
+
+  struct mmap_entry *entry = malloc(sizeof(struct mmap_entry));
+  if (!entry)
+  {
+    exit(EXIT_CODE);
+  }
+
+  entry->mapid = cur->next_mmapid++;
+  entry->file = file;
+  entry->uaddr = addr;
+
+  size_t bytes_into_file = 0;
+  void *uaddr = addr;
+
+  for (int i = 0; i < pages_to_map; i++)
+  {
+    file_size = file_size - bytes_into_file < PGSIZE ? file_size - bytes_into_file : PGSIZE;
+
+    start_sp_access();
+    struct page_info *page_info = malloc(sizeof(struct page_info));
+    if (!page_info)
+    {
+      exit(EXIT_CODE);
+    }
+    page_info->file = file;
+    page_info->page_status = PAGE_MMAP;
+    page_info->upage = uaddr;
+    page_info->writable = true;
+    page_info->page_read_bytes = file_size;
+    page_info->start = bytes_into_file;
+    page_info->mapid = entry->mapid;
+    sp_insert_page_info(page_info);
+    end_sp_access();
+    bytes_into_file += PGSIZE;
+    uaddr += PGSIZE;
+  }
+
+  hash_insert(&cur->mmap_table, &entry->hash_elem);
+
+  f->eax = entry->mapid;
 }
 
+/* TODO: Implement sys_munmap and create helper functions */
 static void sys_munmap(struct intr_frame *f)
 {
   int *esp = f->esp;
-  int status = *(esp + 1);
+  mapid_t mapid = *(esp + 1);
+
+  struct hash *mmap_table = &thread_current()->mmap_table;
+  struct mmap_entry *entry = mmap_search_mapping(mmap_table, mapid);
+
+  if (!entry)
+  {
+    return;
+  }
+
+  start_filesys_access();
+  size_t file_size = file_length(entry->file);
+  end_filesys_access();
+
+  int num_pages = file_size / PGSIZE;
+  if (file_size % PGSIZE != 0)
+  {
+    num_pages++;
+  }
+
+  void *uaddr = entry->uaddr;
+
+  struct hash *sp_table = &thread_current()->sp_table;
+
+  for (int i = 0; i < num_pages; i++)
+  {
+
+    struct page_info *page_info = sp_search_page_info(uaddr);
+
+    if (!page_info)
+    {
+      return;
+    }
+
+    uaddr += PGSIZE;
+  }
 
   /* Exit returns nothing */
 }
