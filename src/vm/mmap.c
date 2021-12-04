@@ -13,12 +13,27 @@ void mmap_init(void)
 {
     struct thread *cur = thread_current();
     hash_init(&cur->mmap_table, mmap_table_hash_func, mmap_table_less_func, NULL);
+    cur->next_mmapid = 0;
 }
 
 /* TODO: Implement Controller Functions
-struct mmap_entry *mmap_search_mapping(void *);
 void mmap_insert_mapping(struct mmap_entry *);
 void mmap_destroy_complete(void); */
+
+struct mmap_entry *mmap_search_mapping(struct hash *mmap_table, mapid_t mapid)
+{
+    struct mmap_entry entry;
+    entry.mapid = mapid;
+
+    struct hash_elem *e = hash_find(mmap_table, &entry.hash_elem);
+
+    if (!e)
+    {
+        return NULL;
+    }
+
+    return hash_entry(e, struct mmap_entry, hash_elem);
+};
 
 static unsigned mmap_table_hash_func(const struct hash_elem *e, void *aux UNUSED)
 {
