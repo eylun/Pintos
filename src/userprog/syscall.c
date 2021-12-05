@@ -513,6 +513,7 @@ static void sys_mmap(struct intr_frame *f)
     exit(EXIT_CODE);
   }
 
+  /* Checks that addr is page aligned */
   if (pg_ofs(addr) != 0)
   {
     // PANIC("help me please");
@@ -559,6 +560,7 @@ static void sys_mmap(struct intr_frame *f)
     pages_to_map++;
   }
 
+  /* Checks that the range of pages to be mapped does not overlap an existing set of mapped pages */
   for (int i = 0; i < pages_to_map; i++)
   {
     if (sp_search_page_info(addr + i * PGSIZE))
