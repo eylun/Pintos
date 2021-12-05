@@ -17,7 +17,9 @@
 /* Lock for accessing vm brain */
 static struct lock vm_lock;
 
+static void *load_swap(struct page_info *);
 static void *load_file(struct page_info *, bool);
+static void evict_and_swap(void);
 
 void start_vm_access(void)
 {
@@ -35,6 +37,8 @@ void vm_init(void)
   lock_init(&vm_lock);
   /* Initialize frame table */
   ft_init();
+  /* Initialize swap */
+  st_init();
 }
 
 /* Access point for the rest of the OS to get a page.
@@ -51,14 +55,11 @@ void vm_init(void)
 void *vm_alloc_get_page(enum palloc_flags flag, void *upage, enum frame_types type)
 {
   ASSERT(check_page_alignment(upage));
-  // printf("I have arrived in vm_alloc\n");
   start_vm_access();
   struct frame *new_frame = ft_request_frame(flag, upage);
   if (!new_frame)
   {
-    /* FOR NOW, KERNEL PANIC. */
-    PANIC("This is a temporary PANIC for 'no more space in frame table'\n");
-    /* TODO: Swap function call */
+    evict_and_swap();
     new_frame = ft_request_frame(flag, upage);
     /* If new_frame is null at this point
        no frames are available for eviction. Panic the kernel through
@@ -73,10 +74,9 @@ void *vm_alloc_get_page(enum palloc_flags flag, void *upage, enum frame_types ty
 /* Function to check if a pointer access is a valid stack access */
 bool is_stack_access(void *fault_addr, void *esp)
 {
-  unsigned long offset = esp - fault_addr;
   /* Checks if fault address occurred within 32 bits from the esp.
      Also checks if the fault address location lies within the maximum stack space*/
-  return (fault_addr >= esp - 32 && PHYS_BASE - pg_round_down(fault_addr) <= STACK_MAX_SPACE);
+  return (fault_addr >= esp - STACK_OFFSET && PHYS_BASE - pg_round_down(fault_addr) <= STACK_MAX_SPACE);
 }
 
 /* VM page fault handler. Called when a page fault occurs where a page
@@ -87,10 +87,13 @@ bool is_stack_access(void *fault_addr, void *esp)
    handler kill the process.
    If the memory reference is valid, this will attempt to commence swap and
    recover the memory from wherever it was stored previously. Then returns a
-   non-NULL pointer so the exception handler will not kill the process. */
+   non-NULL pointer so the exception handler will not kill the process.
+
+   Faulted address passed in is already on the page directory
+   THIS ONLY HAPPENS WHEN PASSED IN FROM SYSCALL VALIDATION */
 void *vm_page_fault(void *fault_addr, void *esp)
 {
-  // printf("there is a page fault at : %x\n", fault_addr);
+  // printf("vm: there is a page fault at : %x\n", fault_addr);
   // if (fault_addr == 0)
   // {
   //   PANIC("WTF");
@@ -98,23 +101,22 @@ void *vm_page_fault(void *fault_addr, void *esp)
   // Check if fault_addr is a key in this thread's SPT
   struct thread *cur = thread_current();
   void *aligned = pg_round_down(fault_addr);
-  /* Faulted address passed in is already on the page directory
-     THIS ONLY HAPPENS WHEN PASSED IN FROM SYSCALL VALIDATION */
-
-  /* Check if this page fault is a stack growth fault */
-  if (is_stack_access(fault_addr, esp))
-  {
-    return vm_grow_stack(aligned);
-  }
   /* Faulted address does not have a value mapped to it in the sp_table
-     Return NULL to let exception.c kill this frame */
-  struct page_info *page_info = sp_search_page_info(aligned);
+     This either means we are attempting to grow stack or throw an error. */
+  struct page_info *page_info = sp_search_page_info(thread_current(), aligned);
   if (!page_info)
-  {
+  { /* Check if this page fault is a stack growth fault */
+    if (is_stack_access(fault_addr, esp))
+    {
+      return vm_grow_stack(aligned);
+    }
     return NULL;
   }
+
   switch (page_info->page_status)
   {
+  case PAGE_SWAP:
+    return load_swap(page_info);
   case PAGE_FILESYS:
     return load_file(page_info, NO_ZERO);
   case PAGE_ZERO:
@@ -122,6 +124,26 @@ void *vm_page_fault(void *fault_addr, void *esp)
   default:
     PANIC("This should not happen\n");
   }
+}
+
+static void *load_swap(struct page_info *page_info)
+{
+  void *kpage = vm_alloc_get_page(PAL_USER, page_info->upage, STACK);
+  if (!kpage)
+  {
+    return NULL;
+  }
+  /* Add the page to the process's address space. */
+  if (!install_page(page_info->upage, kpage, page_info->writable))
+  {
+    vm_free_page(kpage);
+    return NULL;
+  }
+  /* Retrieve the page out from the swap block */
+  st_retrieve(page_info->index, kpage);
+  /* Set the status of the page back to stack. */
+  page_info->page_status = PAGE_STACK;
+  return kpage;
 }
 
 static void *load_file(struct page_info *page_info, bool non_zero)
@@ -172,6 +194,24 @@ static void *load_file(struct page_info *page_info, bool non_zero)
   return kpage;
 }
 
+static void evict_and_swap(void)
+{
+  /* The evicted frame is no longer present in the frame table/list */
+  struct frame *evicted = ft_evict();
+  struct page_info *page_info = sp_search_page_info(evicted->owner, evicted->upage);
+  size_t index = st_insert(evicted->upage);
+  /* Clear the pagedir of the owner so it can no longer access this frame */
+  pagedir_clear_page(evicted->owner->pagedir, evicted->upage);
+  start_sp_access(evicted->owner);
+  page_info->frame = NULL;
+  page_info->page_status = PAGE_SWAP;
+  page_info->index = index;
+  end_sp_access(evicted->owner);
+  /* Free the page of the evicted frame and the frame itself */
+  palloc_free_page(evicted->kpage);
+  free(evicted);
+}
+
 /* VM free page. The VM will search for the pointer provided in the frame table.
    It will assert that the Search has to return something valid.
    The VM will then remove this page from the frame table and the supplemental
@@ -206,6 +246,7 @@ void *vm_grow_stack(void *upage)
     if (!install_page(upage, kpage, true))
     {
       vm_free_page(kpage);
+      return NULL;
     }
   }
   return kpage;

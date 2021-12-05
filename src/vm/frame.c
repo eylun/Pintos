@@ -76,15 +76,21 @@ struct frame *ft_request_frame(enum palloc_flags flags, void *upage)
      appropriately. */
   ASSERT(new_frame != NULL);
   new_frame->kpage = kpage;
+  new_frame->upage = upage;
+  new_frame->owner = thread_current();
+  // printf("I am inserting a new frame at %x: kpage: %x upage: %x owner: %x\n", new_frame, kpage, upage, thread_current());
   lock_init(&new_frame->lock);
   hash_insert(&ft, &new_frame->hashelem);
   list_push_back(&frame_list, &new_frame->listelem);
   /* Update supplemental page table to reflect that the provided
      upage has a kpage */
-  struct page_info *page_info = sp_search_page_info(upage);
+  struct page_info *page_info = sp_search_page_info(thread_current(), upage);
   if (page_info)
   {
+    struct thread *t = thread_current();
+    start_sp_access(t);
     page_info->frame = new_frame;
+    end_sp_access(t);
   }
   end_ft_access();
   return new_frame;
@@ -107,23 +113,58 @@ struct frame *ft_search_frame(void *kpage)
   return hash_entry(e, struct frame, hashelem);
 }
 
+/* Evict a frame based on a LRU cache. This function loops through the frame
+   list and checks whether each frame is accessed or not. Accessed frames will
+   have their accessed bit reset to 0, and shifted to the back of the list. */
+struct frame *ft_evict(void)
+{
+  struct frame *evictee;
+  struct list_elem *e, *refresher;
+  start_ft_access();
+  e = list_begin(&frame_list);
+  /* Loop through the frame list.
+     If the current frame has been accessed, reset it and append it to the back
+     of the list.
+     If the current frame has not been accessed, it will be the evictee */
+  while (e != list_end(&frame_list))
+  {
+    evictee = list_entry(e, struct frame, listelem);
+    /* If the page has not been accessed, it will be used as the evictee */
+    if (!pagedir_is_accessed(evictee->owner->pagedir, evictee->upage))
+    {
+      /* Remove this frame from the frame table and the frame list */
+      ft_remove_frame(evictee);
+      end_ft_access();
+      return evictee;
+    }
+    /* If the page has been accessed, reset it and append it to the back */
+    else
+    {
+      pagedir_set_accessed(evictee->owner->pagedir, evictee->upage, false);
+      refresher = e;
+      e = list_remove(e);
+      list_push_back(&frame_list, refresher);
+    }
+  }
+  end_ft_access();
+  return evictee;
+}
+
 /* Removes a frame from the frame table. This is used by ft_destroy_frame
    when the vm is trying to free frames */
 void ft_remove_frame(struct frame *frame)
 {
-  start_ft_access();
   hash_delete(&ft, &frame->hashelem);
   list_remove(&frame->listelem);
-  end_ft_access();
 }
 
 /* Destroys a frame, removing it from the frame table, freeing the page, and
    also frees the frame. */
 void ft_destroy_frame(struct frame *frame)
 {
-  /* No need to acquire lock here since ft_remove will do so.
-     Moreover, the next actions are independent from the frame table. */
+  start_ft_access();
   ft_remove_frame(frame);
+  end_ft_access();
   if (frame->kpage)
   {
     palloc_free_page(frame->kpage);

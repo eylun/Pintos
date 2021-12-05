@@ -694,7 +694,6 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
   // printf("loading...\n");
   while (read_bytes > 0 || zero_bytes > 0)
   {
-    // printf("read_byte: %d, zero_byte: %d\n", read_bytes, zero_bytes);
     /* Calculate how to fill this page.
        We will read PAGE_READ_BYTES bytes from FILE
        and zero the final PAGE_ZERO_BYTES bytes. */
@@ -715,7 +714,6 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
     page_info->writable = writable;
     page_info->page_read_bytes = page_read_bytes;
     page_info->start = start;
-    // printf("addr: %x read: %d, zero: %d\n", upage, page_read_bytes, page_zero_bytes);
     sp_insert_page_info(page_info);
     /* Advance. */
     start += page_read_bytes;
@@ -732,16 +730,6 @@ static bool
 setup_stack(void **esp)
 {
   uint8_t *kpage, *upage = (uint8_t *)PHYS_BASE - PGSIZE;
-
-  // kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, upage);
-  // if (kpage != NULL)
-  // {
-  //   success = install_page(upage, kpage, true);
-  //   if (success)
-  //     *esp = PHYS_BASE;
-  //   else
-  //     vm_free_page(kpage);
-  // }
   if (vm_grow_stack(upage))
   {
     *esp = PHYS_BASE;
