@@ -3,11 +3,8 @@
 
 #include <hash.h>
 
-<<<<<<< HEAD
-#define MMAP_ERROR - 1
-=======
->>>>>>> feat: added struct mmap_entry and mmap controller function signatures
-    typedef int mapid_t;
+#define MMAP_ERROR -1
+typedef int mapid_t;
 
 struct mmap_entry
 {
