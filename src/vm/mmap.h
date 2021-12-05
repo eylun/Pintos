@@ -3,6 +3,7 @@
 
 #include <hash.h>
 
+#define MMAP_ERROR -1
 typedef int mapid_t;
 
 struct mmap_entry
@@ -20,5 +21,6 @@ void mmap_init(void);
 struct mmap_entry *mmap_search_mapping(struct hash *mmap_table, mapid_t mapid);
 void mmap_insert_mapping(struct mmap_entry *);
 void mmap_destroy_complete(void);
+void mmap_write_back_data(struct mmap_entry *entry, void *src, size_t offset, size_t length);
 
 #endif
