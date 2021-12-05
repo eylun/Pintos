@@ -7,10 +7,9 @@
 
 enum frame_types
 {
-  STACK,   /* Frame contains a page for a stack */
-  FILE,    /* Frame contains a page for a file */
-  MMAP,    /* Frame contains a page for a mmap */
-  WRITABLE /* Frame contains a page for a writable */
+  STACK, /* Frame contains a page for a stack */
+  FILE,  /* Frame contains a page for a file */
+  MMAP,  /* Frame contains a page for a mmap */
 };
 struct frame
 {

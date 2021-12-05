@@ -8,6 +8,7 @@
 
 enum page_status
 {
+  PAGE_STACK,
   PAGE_SWAP,
   PAGE_ZERO,
   PAGE_FILESYS

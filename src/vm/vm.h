@@ -11,7 +11,7 @@
 #define PUSH_OFFSET 4
 #define PUSHA_OFFSET 32
 
-#define STACK_MAX_SPACE 1024 * 8000 /* 1kb * 8000 = 8MB */
+#define STACK_MAX_SPACE 20 * PGSIZE /* 20 * 4KB = 8MB */
 
 /* Initialize the VM controller */
 void vm_init(void);

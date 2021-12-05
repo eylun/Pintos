@@ -166,5 +166,5 @@ bool frame_table_less_func(const struct hash_elem *e1,
                            const struct hash_elem *e2, void *aux UNUSED)
 {
   return hash_entry(e1, struct frame, hashelem)->kpage <
-         hash_entry(e2, struct frame, hashelem);
+         hash_entry(e2, struct frame, hashelem)->kpage;
 }
