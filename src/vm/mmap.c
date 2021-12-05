@@ -6,8 +6,12 @@
 #include "lib/kernel/hash.h"
 #include "userprog/syscall.h"
 
+<<<<<<< HEAD
 static unsigned
 mmap_table_hash_func(const struct hash_elem *, void *UNUSED);
+=======
+static unsigned mmap_table_hash_func(const struct hash_elem *, void *UNUSED);
+>>>>>>> 801b28296e8eb19533fa8ca5b80e0fd6cd31d172
 bool mmap_table_less_func(const struct hash_elem *,
                           const struct hash_elem *, void *UNUSED);
 
