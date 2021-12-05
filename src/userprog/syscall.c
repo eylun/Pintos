@@ -484,25 +484,28 @@ static void sys_mmap(struct intr_frame *f)
 {
   int *esp = f->esp;
   int fd = *(esp + 1);
-  void *addr = (void *)(esp + 2);
+  void *addr = (void *)*(esp + 2);
 
   /* Pintos assumes virtual page 0 is not mapped and fd = 0 and fd = 1 is not mappable */
   if (addr == 0 || fd == 0 || fd == 1)
   {
-    f->eax = -1;
+    // PANIC("help");
+    f->eax = MMAP_ERROR;
     return;
   }
 
   /* Checks that addr is a user virtual address */
   if (!is_user_vaddr(addr))
   {
+    // PANIC("help me");
     exit(EXIT_CODE);
   }
 
   /* Checks that addr is page aligned */
   if (pg_ofs(addr) != 0)
   {
-    f->eax = -1;
+    // PANIC("help me please");
+    f->eax = MMAP_ERROR;
     return;
   }
 
@@ -513,7 +516,7 @@ static void sys_mmap(struct intr_frame *f)
 
   if (elem == NULL)
   {
-    f->eax = -1;
+    f->eax = MMAP_ERROR;
     return;
   }
   /* TODO: Create a function to retrieve file_descriptor given fd */
@@ -521,7 +524,7 @@ static void sys_mmap(struct intr_frame *f)
   struct file_descriptor *open_descriptor = hash_entry(elem, struct file_descriptor, hash_elem);
   if (open_descriptor == NULL)
   {
-    f->eax = -1;
+    f->eax = MMAP_ERROR;
     return;
   }
 
@@ -529,18 +532,18 @@ static void sys_mmap(struct intr_frame *f)
      Need to use own file handle to the file. Done by reopening the file. */
   start_filesys_access();
   struct file *file = file_reopen(open_descriptor->file);
-  int file_size = file_length(file);
+  off_t length = file_length(file);
   end_filesys_access();
 
   /* Returns -1 if file has length of zero bytes */
-  if (file_size == 0)
+  if (length == 0)
   {
-    f->eax = -1;
+    f->eax = MMAP_ERROR;
     return;
   }
 
-  int pages_to_map = file_size / PGSIZE;
-  if (file_size % PGSIZE)
+  int pages_to_map = length / PGSIZE;
+  if (length % PGSIZE)
   {
     pages_to_map++;
   }
@@ -550,16 +553,11 @@ static void sys_mmap(struct intr_frame *f)
   {
     if (sp_search_page_info(addr + i * PGSIZE))
     {
-      f->eax = -1;
+      // PANIC("help ,");
+      f->eax = MMAP_ERROR;
       return;
     }
   }
-
-  /* TODO:
-  - initialize memory-mapping data structure
-  - add the mapped entries to sp_table
-  - return appropriate mapping id 
-  - create MACRO for -1 */
 
   struct thread *cur = thread_current();
 
@@ -578,7 +576,7 @@ static void sys_mmap(struct intr_frame *f)
 
   for (int i = 0; i < pages_to_map; i++)
   {
-    file_size = file_size - bytes_into_file < PGSIZE ? file_size - bytes_into_file : PGSIZE;
+    length = length - bytes_into_file < PGSIZE ? length - bytes_into_file : PGSIZE;
 
     start_sp_access();
     struct page_info *page_info = malloc(sizeof(struct page_info));
@@ -586,11 +584,9 @@ static void sys_mmap(struct intr_frame *f)
     {
       exit(EXIT_CODE);
     }
-    page_info->file = file;
     page_info->page_status = PAGE_MMAP;
     page_info->upage = uaddr;
-    page_info->writable = true;
-    page_info->page_read_bytes = file_size;
+    page_info->page_read_bytes = length;
     page_info->start = bytes_into_file;
     page_info->mapid = entry->mapid;
     sp_insert_page_info(page_info);
@@ -641,9 +637,29 @@ static void sys_munmap(struct intr_frame *f)
     {
       return;
     }
+    if (page_info->page_status == PAGE_MMAP)
+    {
+      void *kaddr = pagedir_get_page(thread_current()->pagedir, uaddr);
+      if (pagedir_is_dirty(thread_current()->pagedir, page_info->upage))
+      {
+        mmap_write_back_data(entry, kaddr, page_info->start, page_info->page_read_bytes);
+      }
+    }
+
+    struct page_info temp_page_info;
+    temp_page_info.upage = uaddr;
+    hash_delete(sp_table, &temp_page_info.elem);
 
     uaddr += PGSIZE;
   }
 
-  /* Exit returns nothing */
+  struct mmap_entry temp_entry;
+  temp_entry.mapid = entry->mapid;
+  hash_delete(&thread_current()->mmap_table, &temp_entry.hash_elem);
+
+  start_filesys_access();
+  file_close(entry->file);
+  end_filesys_access();
+
+  free(entry);
 }
