@@ -1,5 +1,6 @@
 #include <string.h>
 #include "vm/frame.h"
+#include "vm/page.h"
 #include "threads/palloc.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
@@ -17,6 +18,12 @@
    will definitely be the least recently used frame */
 static struct hash ft;
 
+/* Helper list for two purposes:
+   1. This list is used to implement our LRU cache for eviction.
+   2. This list is used to implement sharing. All loading threads will
+      iterate through this list before allocating any pages. */
+static struct list frame_list;
+
 /* Lock for frame table actions */
 static struct lock frame_table_lock;
 
@@ -32,6 +39,7 @@ void ft_init(void)
 {
   lock_init(&frame_table_lock);
   hash_init(&ft, frame_table_hash_func, frame_table_less_func, NULL);
+  list_init(&frame_list);
 }
 
 static void start_ft_access(void)
@@ -69,7 +77,15 @@ struct frame *ft_request_frame(enum palloc_flags flags, void *upage)
   ASSERT(new_frame != NULL);
   new_frame->kpage = kpage;
   lock_init(&new_frame->lock);
-  hash_insert(&ft, &new_frame->elem);
+  hash_insert(&ft, &new_frame->hashelem);
+  list_push_back(&frame_list, &new_frame->listelem);
+  /* Update supplemental page table to reflect that the provided
+     upage has a kpage */
+  struct page_info *page_info = sp_search_page_info(upage);
+  if (page_info)
+  {
+    page_info->frame = new_frame;
+  }
   end_ft_access();
   return new_frame;
 }
@@ -82,13 +98,13 @@ struct frame *ft_search_frame(void *kpage)
   struct frame dummy_frame;
   struct hash_elem *e;
   dummy_frame.kpage = kpage;
-  e = hash_find(&ft, &dummy_frame.elem);
+  e = hash_find(&ft, &dummy_frame.hashelem);
   end_ft_access();
   if (!e)
   {
     return NULL;
   }
-  return hash_entry(e, struct frame, elem);
+  return hash_entry(e, struct frame, hashelem);
 }
 
 /* Removes a frame from the frame table. This is used by ft_destroy_frame
@@ -96,7 +112,8 @@ struct frame *ft_search_frame(void *kpage)
 void ft_remove_frame(struct frame *frame)
 {
   start_ft_access();
-  hash_delete(&ft, &frame->elem);
+  hash_delete(&ft, &frame->hashelem);
+  list_remove(&frame->listelem);
   end_ft_access();
 }
 
@@ -107,18 +124,47 @@ void ft_destroy_frame(struct frame *frame)
   /* No need to acquire lock here since ft_remove will do so.
      Moreover, the next actions are independent from the frame table. */
   ft_remove_frame(frame);
-  palloc_free_page(frame->kpage);
+  if (frame->kpage)
+  {
+    palloc_free_page(frame->kpage);
+  }
   free(frame);
+}
+
+/* Loop through the frame list to find a frame with a upage that contains a page
+   that is read only (type = FILE) */
+struct frame *frame_list_find_upage(void *upage)
+{
+  struct list_elem *e;
+  struct frame *f;
+  for (e = list_begin(&frame_list); e != list_end(&frame_list); e = list_next(e))
+  {
+    f = list_entry(e, struct frame, listelem);
+    /* Identify a frame with the same upage */
+    if (f->upage == upage)
+    {
+      /* If the identified frame is not of type FILE, then it is
+         not a read_only file. Hence it should not be shareable.
+         We know there will never be two pages with the same upage mapping
+         so we can break the loop and immediately return NULL */
+      if (f->type != FILE)
+      {
+        return NULL;
+      }
+      return f;
+    }
+  }
+  return NULL;
 }
 
 unsigned frame_table_hash_func(const struct hash_elem *e, void *aux UNUSED)
 {
-  return (unsigned)hash_entry(e, struct frame, elem)->kpage;
+  return (unsigned)hash_entry(e, struct frame, hashelem)->kpage;
 }
 
 bool frame_table_less_func(const struct hash_elem *e1,
                            const struct hash_elem *e2, void *aux UNUSED)
 {
-  return hash_entry(e1, struct frame, elem)->kpage <
-         hash_entry(e2, struct frame, elem);
+  return hash_entry(e1, struct frame, hashelem)->kpage <
+         hash_entry(e2, struct frame, hashelem)->kpage;
 }

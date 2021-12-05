@@ -9,8 +9,8 @@
 #include "userprog/syscall.h"
 #include "filesys/file.h"
 #include "string.h"
-#include "vm/vm.h"
 #include "vm/frame.h"
+#include "vm/vm.h"
 #include "vm/swap.h"
 #include "vm/page.h"
 
@@ -31,7 +31,9 @@ void end_vm_access(void)
 
 void vm_init(void)
 {
+  /* Initialize vm lock */
   lock_init(&vm_lock);
+  /* Initialize frame table */
   ft_init();
 }
 
@@ -46,7 +48,7 @@ void vm_init(void)
     3b. Request for a frame again (ONLY IF SWAPPED)
     4b. Asks the frame table to insert the frame.
     5b. Returns the pointer to the page. */
-void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
+void *vm_alloc_get_page(enum palloc_flags flag, void *upage, enum frame_types type)
 {
   ASSERT(check_page_alignment(upage));
   // printf("I have arrived in vm_alloc\n");
@@ -63,6 +65,7 @@ void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
        the ASSERT call. */
     ASSERT(new_frame != NULL);
   }
+  new_frame->type = type;
   end_vm_access();
   return new_frame->kpage;
 }
@@ -71,9 +74,9 @@ void *vm_alloc_get_page(enum palloc_flags flag, void *upage)
 bool is_stack_access(void *fault_addr, void *esp)
 {
   unsigned long offset = esp - fault_addr;
-  /* Checks if esp is below the fault or if the offset is either 4 or 32. 
-  Additionally, checks if the fault address occured in the correct zone between PHYS_BASE - STACK_MAX_SPACE and PHYS_BASE*/
-  return (esp <= fault_addr || offset == PUSH_OFFSET || offset == PUSHA_OFFSET) && (PHYS_BASE - STACK_MAX_SPACE <= fault_addr && PHYS_BASE > fault_addr);
+  /* Checks if fault address occurred within 32 bits from the esp.
+     Also checks if the fault address location lies within the maximum stack space*/
+  return (fault_addr >= esp - 32 && PHYS_BASE - pg_round_down(fault_addr) <= STACK_MAX_SPACE);
 }
 
 /* VM page fault handler. Called when a page fault occurs where a page
@@ -95,6 +98,8 @@ void *vm_page_fault(void *fault_addr, void *esp)
   // Check if fault_addr is a key in this thread's SPT
   struct thread *cur = thread_current();
   void *aligned = pg_round_down(fault_addr);
+  /* Faulted address passed in is already on the page directory
+     THIS ONLY HAPPENS WHEN PASSED IN FROM SYSCALL VALIDATION */
 
   /* Check if this page fault is a stack growth fault */
   if (is_stack_access(fault_addr, esp))
@@ -112,7 +117,6 @@ void *vm_page_fault(void *fault_addr, void *esp)
   {
   case PAGE_FILESYS:
     return load_file(page_info, NO_ZERO);
-    break;
   case PAGE_ZERO:
     return load_file(page_info, ZERO);
   default:
@@ -122,10 +126,23 @@ void *vm_page_fault(void *fault_addr, void *esp)
 
 static void *load_file(struct page_info *page_info, bool non_zero)
 {
-  // printf("I have started load_file, start:%d end: %d\n", page_info->page_read_bytes, page_info->page_zero_bytes);
-
-  /* Get a new page of memory. */
-  void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage);
+  void *kpage;
+  // struct frame *frame = frame_list_find_upage(page_info->upage);
+  // // printf("the frame is: %x with upage :%x\n", frame, page_info->upage);
+  // /* If kpage is NULL, get a new page of memory.
+  //    If kpage is not NULL, that means it has already been allocated in the past.
+  //    */
+  // if (frame)
+  // {
+  //   // printf("frame exists: %x\n", frame);
+  //   if (!install_page(page_info->upage, frame->kpage, page_info->writable))
+  //   {
+  //     return NULL;
+  //   }
+  //   page_info->frame = frame;
+  //   return frame->kpage;
+  // }
+  kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage, FILE);
   if (!kpage)
   {
     return NULL;
@@ -171,7 +188,19 @@ void vm_free_page(void *kpage)
 /* Grows the stack by mapping a zeroed page at upage */
 void *vm_grow_stack(void *upage)
 {
-  void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, upage);
+  /* Add page_info of this new stack into the thread's sp table */
+  struct thread *t = thread_current();
+  /*Malloc new page_info for stack page
+    1. upage
+    2. writable */
+  struct page_info *page_info = calloc(1, sizeof(struct page_info));
+  page_info->page_status = PAGE_STACK;
+  page_info->upage = upage;
+  /* Stack pages have to be writable */
+  page_info->writable = true;
+  // printf("addr: %x read: %d, zero: %d\n", upage, page_read_bytes, page_zero_bytes);
+  sp_insert_page_info(page_info);
+  void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, upage, STACK);
   if (kpage != NULL)
   {
     if (!install_page(upage, kpage, true))

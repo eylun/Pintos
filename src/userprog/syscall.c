@@ -13,6 +13,7 @@
 #include "lib/kernel/hash.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "vm/page.h"
 
 typedef void (*handler)(struct intr_frame *);
 
@@ -100,6 +101,16 @@ syscall_handler(struct intr_frame *f)
      occurs right before the calling of the handlers */
   // printf("syscall: %d\n", *esp);
   syscalls[*esp](f);
+}
+
+/* Check if a buffer is writable. */
+static void check_buffer_writable(void *buffer)
+{
+  struct page_info *page_info = sp_search_page_info(pg_round_down(buffer));
+  if (page_info && !page_info->writable)
+  {
+    exit(EXIT_CODE);
+  }
 }
 
 /* validate_memory takes in a pointer and an arguments parameter.
@@ -196,7 +207,7 @@ static void sys_exec(struct intr_frame *f)
      string. Note that it is possible that while cmd_line points to user
      memory, it might not point to an actual string. */
   validate_memory((void *)cmd_line, 1);
-  validate_buffer((void *)cmd_line, strnlen(cmd_line, PGSIZE));
+  // validate_buffer((void *)cmd_line, strnlen(cmd_line, PGSIZE));
 
   f->eax = process_execute(cmd_line);
 }
@@ -217,7 +228,7 @@ static void sys_create(struct intr_frame *f)
   unsigned initial_size = *(unsigned *)(esp + 2);
 
   validate_memory((void *)file, 1);
-  validate_buffer((void *)file, FILE_MAX);
+  // validate_buffer((void *)file, FILE_MAX);
 
   start_filesys_access();
 
@@ -233,7 +244,7 @@ static void sys_remove(struct intr_frame *f)
   const char *file = *(const char **)(esp + 1);
 
   validate_memory((void *)file, 1);
-  validate_buffer((void *)file, FILE_MAX);
+  // validate_buffer((void *)file, FILE_MAX);
 
   start_filesys_access();
 
@@ -248,7 +259,7 @@ static void sys_open(struct intr_frame *f)
   int *esp = f->esp;
   const char *filename = *(const char **)(esp + 1);
   validate_memory((void *)filename, 1);
-  validate_buffer((void *)filename, FILE_MAX);
+  // validate_buffer((void *)filename, FILE_MAX);
 
   start_filesys_access();
 
@@ -321,6 +332,7 @@ static void sys_read(struct intr_frame *f)
   unsigned size = *(unsigned *)(esp + 3);
 
   validate_memory((void *)buffer, 1);
+  check_buffer_writable((void *)buffer);
   // validate_buffer((void *)buffer, size);
 
   int ret = EXIT_CODE;
@@ -358,7 +370,8 @@ static void sys_write(struct intr_frame *f)
   unsigned size = *(unsigned *)(esp + 3);
 
   validate_memory((void *)buffer, 1);
-  validate_buffer((void *)buffer, size);
+  check_buffer_writable((void *)buffer);
+  // validate_buffer((void *)buffer, size);
 
   int ret = 0;
   if (fd == 1)

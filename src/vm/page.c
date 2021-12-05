@@ -75,10 +75,14 @@ struct page_info *sp_search_page_info(void *upage)
 void sp_destroy_page_info(struct hash_elem *e, void *aux UNUSED)
 {
   struct page_info *to_remove = hash_entry(e, struct page_info, elem);
-  struct frame *frame_to_free = ft_search_frame(to_remove->kpage);
+  struct frame *frame_to_free = to_remove->frame;
   if (frame_to_free)
   {
-    ft_destroy_frame(to_remove->kpage);
+    /* kpage is set to NULL because the page has been wiped when
+       pagedir_destroy was called. ft_destroy_frame() will not free pages
+       if the pointer of the frame is NULL */
+    frame_to_free->kpage = NULL;
+    ft_destroy_frame(frame_to_free);
   }
   hash_delete(&thread_current()->sp_table, e);
   free(to_remove);
