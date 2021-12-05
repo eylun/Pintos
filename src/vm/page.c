@@ -21,14 +21,14 @@ void sp_init(void)
   lock_init(&cur->sp_table_lock);
 }
 
-void start_sp_access(void)
+void start_sp_access(struct thread *t)
 {
-  lock_acquire(&thread_current()->sp_table_lock);
+  lock_acquire(&t->sp_table_lock);
 }
 
-void end_sp_access(void)
+void end_sp_access(struct thread *t)
 {
-  lock_release(&thread_current()->sp_table_lock);
+  lock_release(&t->sp_table_lock);
 }
 
 void sp_insert_page_info(struct page_info *page_info)
@@ -38,10 +38,11 @@ void sp_insert_page_info(struct page_info *page_info)
   {
     page_info->page_status = PAGE_ZERO;
   }
+  struct thread *t = thread_current();
   /* Insert the newly created page_info into this process' sp_table */
   /* Insert page metadata into hash table through hash_replace due to GCC
      complications where the same code can be inserted in the same segment */
-  start_sp_access();
+  start_sp_access(t);
   struct hash_elem *old_e = hash_replace(&thread_current()->sp_table, &page_info->elem);
   struct page_info *old_info;
   /* If something has been replaced it means that this page_info was the old
@@ -52,17 +53,17 @@ void sp_insert_page_info(struct page_info *page_info)
     page_info->writable = old_info->writable || page_info->writable;
     free(old_info);
   }
-  end_sp_access();
+  end_sp_access(t);
 }
 
-struct page_info *sp_search_page_info(void *upage)
+struct page_info *sp_search_page_info(struct thread *t, void *upage)
 {
-  start_sp_access();
+  start_sp_access(t);
   struct page_info dummy_page_info;
   struct hash_elem *e;
   dummy_page_info.upage = upage;
-  e = hash_find(&thread_current()->sp_table, &dummy_page_info.elem);
-  end_sp_access();
+  e = hash_find(&t->sp_table, &dummy_page_info.elem);
+  end_sp_access(t);
   if (!e)
   {
     return NULL;
@@ -94,9 +95,9 @@ void sp_destroy_complete(void)
 {
   /* No need to acquire lock here since ft_remove will do so.
      Moreover, the next actions are independent from the frame table. */
-  start_sp_access();
+  start_sp_access(thread_current());
   hash_destroy(&thread_current()->sp_table, sp_destroy_page_info);
-  end_sp_access();
+  end_sp_access(thread_current());
 }
 
 unsigned sp_table_hash_func(const struct hash_elem *e, void *aux UNUSED)

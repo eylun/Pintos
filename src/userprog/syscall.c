@@ -20,9 +20,9 @@ typedef void (*handler)(struct intr_frame *);
 static void syscall_handler(struct intr_frame *);
 static void validate_memory(void *, int);
 
+void exit(int status);
 static void sys_halt(struct intr_frame *UNUSED);
 static void sys_exit(struct intr_frame *);
-static void exit(int status);
 static void sys_exec(struct intr_frame *);
 static void sys_wait(struct intr_frame *);
 static void sys_create(struct intr_frame *);
@@ -106,7 +106,7 @@ syscall_handler(struct intr_frame *f)
 /* Check if a buffer is writable. */
 static void check_buffer_writable(void *buffer)
 {
-  struct page_info *page_info = sp_search_page_info(pg_round_down(buffer));
+  struct page_info *page_info = sp_search_page_info(thread_current(), pg_round_down(buffer));
   if (page_info && !page_info->writable)
   {
     exit(EXIT_CODE);
@@ -185,7 +185,7 @@ static void sys_exit(struct intr_frame *f)
   /* Exit returns nothing */
 }
 
-static void exit(int status)
+void exit(int status)
 {
   thread_current()->process->exit_code = status;
   thread_exit();

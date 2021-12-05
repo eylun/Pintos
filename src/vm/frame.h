@@ -31,6 +31,7 @@ void ft_update(struct frame *);
 struct frame *ft_search_frame(void *);
 void ft_remove_frame(struct frame *);
 void ft_destroy_frame(struct frame *);
+struct frame *ft_evict(void);
 
 /* Frame list functions */
 struct frame *frame_list_find_upage(void *);

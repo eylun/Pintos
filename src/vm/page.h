@@ -24,19 +24,19 @@ struct page_info
   struct hash_elem elem;        /* Used to store the page in the process's supplemental page table */
   struct frame *frame;          /* Pointer to frame corresponding to this page */
   enum page_status page_status; /* Stores page current status */
-  int index;                    /* I'm not sure what this is but we'll find out */
+  int index;                    /* Swap table index */
 };
 
 /* Initialization */
 void sp_init(void);
 
 /* Lock Access */
-void start_sp_access(void);
-void end_sp_access(void);
+void start_sp_access(struct thread *);
+void end_sp_access(struct thread *);
 
 /* Controller Functions */
 void sp_insert_page_info(struct page_info *);
-struct page_info *sp_search_page_info(void *);
+struct page_info *sp_search_page_info(struct thread *t, void *);
 void sp_destroy_complete(void);
 
 #endif /* vm/page.h */
