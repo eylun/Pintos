@@ -4,6 +4,7 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "lib/kernel/hash.h"
+#include "userprog/syscall.h"
 
 static unsigned mmap_table_hash_func(const struct hash_elem *, void *UNUSED);
 bool mmap_table_less_func(const struct hash_elem *,
@@ -46,4 +47,12 @@ bool mmap_table_less_func(const struct hash_elem *e1,
 {
     return hash_entry(e1, struct mmap_entry, hash_elem)->mapid <
            hash_entry(e2, struct mmap_entry, hash_elem)->mapid;
+}
+
+void mmap_write_back_data(struct mmap_entry *entry, void *src, size_t offset, size_t length)
+{
+    start_filesys_access();
+    file_seek(entry->file, offset);
+    file_write(entry->file, src, length);
+    end_filesys_access();
 }
