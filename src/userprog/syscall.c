@@ -513,10 +513,7 @@ static void sys_mmap(struct intr_frame *f)
     exit(EXIT_CODE);
   }
 
-<<<<<<< HEAD
-=======
   /* Checks that addr is page aligned */
->>>>>>> 801b28296e8eb19533fa8ca5b80e0fd6cd31d172
   if (pg_ofs(addr) != 0)
   {
     // PANIC("help me please");
@@ -535,10 +532,6 @@ static void sys_mmap(struct intr_frame *f)
     return;
   }
   /* TODO: Create a function to retrieve file_descriptor given fd */
-<<<<<<< HEAD
-=======
-
->>>>>>> 801b28296e8eb19533fa8ca5b80e0fd6cd31d172
   struct file_descriptor *open_descriptor = hash_entry(elem, struct file_descriptor, hash_elem);
   if (open_descriptor == NULL)
   {
@@ -569,11 +562,7 @@ static void sys_mmap(struct intr_frame *f)
   /* Checks that the range of pages to be mapped does not overlap an existing set of mapped pages */
   for (int i = 0; i < pages_to_map; i++)
   {
-<<<<<<< HEAD
     if (sp_search_page_info(thread_current(), addr + i * PGSIZE))
-=======
-    if (sp_search_page_info(addr + i * PGSIZE))
->>>>>>> 801b28296e8eb19533fa8ca5b80e0fd6cd31d172
     {
       // PANIC("help ,");
       f->eax = MMAP_ERROR;
@@ -598,11 +587,6 @@ static void sys_mmap(struct intr_frame *f)
   for (int i = 0; i < pages_to_map; i++)
   {
     length = length - bytes_into_file < PGSIZE ? length - bytes_into_file : PGSIZE;
-<<<<<<< HEAD
-=======
-
-    start_sp_access();
->>>>>>> 801b28296e8eb19533fa8ca5b80e0fd6cd31d172
     struct page_info *page_info = malloc(sizeof(struct page_info));
     if (!page_info)
     {
@@ -614,10 +598,6 @@ static void sys_mmap(struct intr_frame *f)
     page_info->start = bytes_into_file;
     page_info->mapid = entry->mapid;
     sp_insert_page_info(page_info);
-<<<<<<< HEAD
-=======
-    end_sp_access();
->>>>>>> 801b28296e8eb19533fa8ca5b80e0fd6cd31d172
     bytes_into_file += PGSIZE;
     uaddr += PGSIZE;
   }
@@ -657,12 +637,7 @@ static void sys_munmap(struct intr_frame *f)
 
   for (int i = 0; i < num_pages; i++)
   {
-
-<<<<<<< HEAD
     struct page_info *page_info = sp_search_page_info(thread_current(), uaddr);
-=======
-    struct page_info *page_info = sp_search_page_info(uaddr);
->>>>>>> 801b28296e8eb19533fa8ca5b80e0fd6cd31d172
 
     if (!page_info)
     {
@@ -693,8 +668,4 @@ static void sys_munmap(struct intr_frame *f)
   end_filesys_access();
 
   free(entry);
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 801b28296e8eb19533fa8ca5b80e0fd6cd31d172
