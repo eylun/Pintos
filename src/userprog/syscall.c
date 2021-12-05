@@ -531,134 +531,36 @@ static void sys_mmap(struct intr_frame *f)
     return;
   }
   /* TODO: Create a function to retrieve file_descriptor given fd */
-<<<<<<< HEAD
-=======
-
->>>>>>> feat: implemented sys_mmap
   struct file_descriptor *open_descriptor = hash_entry(elem, struct file_descriptor, hash_elem);
   if (open_descriptor == NULL)
   {
-    /* Need to use own file handle to the file. Done by reopening the file. */
-    start_filesys_access();
-    struct file *file = file_reopen(open_descriptor->file);
-    off_t length = file_length(file);
-    end_filesys_access();
+    f->eax = MMAP_ERROR;
+    return;
+  }
 
-<<<<<<< HEAD
-    /* Returns -1 if file has length of zero bytes */
-    if (length == 0)
-    {
-      f->eax = MMAP_ERROR;
-      return;
-    }
-=======
   /* Memory map stays even when original file is closed or removed.
      Need to use own file handle to the file. Done by reopening the file. */
   start_filesys_access();
   struct file *file = file_reopen(open_descriptor->file);
-  int file_size = file_length(file);
+  off_t length = file_length(file);
   end_filesys_access();
->>>>>>> feat: implemented sys_mmap
 
-    int pages_to_map = length / PGSIZE;
-    if (length % PGSIZE)
-    {
-      pages_to_map++;
-    }
-
-    /* Checks that the range of pages to be mapped does not overlap an existing set of mapped pages */
-    for (int i = 0; i < pages_to_map; i++)
-    {
-      if (sp_search_page_info(addr + i * PGSIZE))
-      {
-        // PANIC("help ,");
-        f->eax = MMAP_ERROR;
-        return;
-      }
-    }
-    struct thread *cur = thread_current();
-
-    struct mmap_entry *entry = malloc(sizeof(struct mmap_entry));
-    if (!entry)
-    {
-      exit(EXIT_CODE);
-    }
-
-    entry->mapid = cur->next_mmapid++;
-    entry->file = file;
-    entry->uaddr = addr;
-
-    size_t bytes_into_file = 0;
-    void *uaddr = addr;
-
-    for (int i = 0; i < pages_to_map; i++)
-    {
-      length = length - bytes_into_file < PGSIZE ? length - bytes_into_file : PGSIZE;
-
-      start_sp_access();
-      struct page_info *page_info = malloc(sizeof(struct page_info));
-      if (!page_info)
-      {
-        exit(EXIT_CODE);
-      }
-      page_info->page_status = PAGE_MMAP;
-      page_info->upage = uaddr;
-      page_info->page_read_bytes = length;
-      page_info->start = bytes_into_file;
-      page_info->mapid = entry->mapid;
-      sp_insert_page_info(page_info);
-      end_sp_access();
-      bytes_into_file += PGSIZE;
-      uaddr += PGSIZE;
-    }
-
-    hash_insert(&cur->mmap_table, &entry->hash_elem);
-
-    f->eax = entry->mapid;
+  int pages_to_map = length / PGSIZE;
+  if (length % PGSIZE)
+  {
+    pages_to_map++;
   }
 
-  /* TODO: Implement sys_munmap and create helper functions */
-  static void sys_munmap(struct intr_frame * f)
+  /* Checks that the range of pages to be mapped does not overlap an existing set of mapped pages */
+  for (int i = 0; i < pages_to_map; i++)
   {
-    int *esp = f->esp;
-    mapid_t mapid = *(esp + 1);
-
-    struct hash *mmap_table = &thread_current()->mmap_table;
-    struct mmap_entry *entry = mmap_search_mapping(mmap_table, mapid);
-
-    if (!entry)
+    if (sp_search_page_info(addr + i * PGSIZE))
     {
+      // PANIC("help ,");
+      f->eax = MMAP_ERROR;
       return;
     }
-
-<<<<<<< HEAD
-    start_filesys_access();
-    size_t file_size = file_length(entry->file);
-    end_filesys_access();
-
-    int num_pages = file_size / PGSIZE;
-    if (file_size % PGSIZE != 0)
-    {
-      num_pages++;
-    }
-
-    void *uaddr = entry->uaddr;
-
-<<<<<<< HEAD
-    struct hash *sp_table = &thread_current()->sp_table;
-=======
-static void sys_munmap(struct intr_frame *f)
-{
-  int *esp = f->esp;
-  int status = *(esp + 1);
->>>>>>> feat: added handlers for mmap and munmap in syscalls
-=======
-  /* TODO:
-  - initialize memory-mapping data structure
-  - add the mapped entries to sp_table
-  - return appropriate mapping id 
-  - create MACRO for -1 */
-
+  }
   struct thread *cur = thread_current();
 
   struct mmap_entry *entry = malloc(sizeof(struct mmap_entry));
@@ -676,7 +578,7 @@ static void sys_munmap(struct intr_frame *f)
 
   for (int i = 0; i < pages_to_map; i++)
   {
-    file_size = file_size - bytes_into_file < PGSIZE ? file_size - bytes_into_file : PGSIZE;
+    length = length - bytes_into_file < PGSIZE ? length - bytes_into_file : PGSIZE;
 
     start_sp_access();
     struct page_info *page_info = malloc(sizeof(struct page_info));
@@ -684,11 +586,9 @@ static void sys_munmap(struct intr_frame *f)
     {
       exit(EXIT_CODE);
     }
-    page_info->file = file;
     page_info->page_status = PAGE_MMAP;
     page_info->upage = uaddr;
-    page_info->writable = true;
-    page_info->page_read_bytes = file_size;
+    page_info->page_read_bytes = length;
     page_info->start = bytes_into_file;
     page_info->mapid = entry->mapid;
     sp_insert_page_info(page_info);
@@ -739,51 +639,29 @@ static void sys_munmap(struct intr_frame *f)
     {
       return;
     }
+    if (page_info->page_status == PAGE_MMAP)
+    {
+      void *kaddr = pagedir_get_page(thread_current()->pagedir, uaddr);
+      if (pagedir_is_dirty(thread_current()->pagedir, page_info->upage))
+      {
+        mmap_write_back_data(entry, kaddr, page_info->start, page_info->page_read_bytes);
+      }
+    }
+
+    struct page_info temp_page_info;
+    temp_page_info.upage = uaddr;
+    hash_delete(sp_table, &temp_page_info.elem);
 
     uaddr += PGSIZE;
   }
->>>>>>> feat: implemented sys_mmap
 
-    for (int i = 0; i < num_pages; i++)
-    {
+  struct mmap_entry temp_entry;
+  temp_entry.mapid = entry->mapid;
+  hash_delete(&thread_current()->mmap_table, &temp_entry.hash_elem);
 
-      struct page_info *page_info = sp_search_page_info(uaddr);
+  start_filesys_access();
+  file_close(entry->file);
+  end_filesys_access();
 
-      if (!page_info)
-      {
-        return;
-      }
-      if (page_info->page_status == PAGE_MMAP)
-      {
-        void *kaddr = pagedir_get_page(thread_current()->pagedir, uaddr);
-        if (pagedir_is_dirty(thread_current()->pagedir, page_info->upage))
-        {
-          mmap_write_back_data(entry, kaddr, page_info->start, page_info->page_read_bytes);
-        }
-      }
-
-      struct page_info temp_page_info;
-      temp_page_info.upage = uaddr;
-      hash_delete(sp_table, &temp_page_info.elem);
-
-      uaddr += PGSIZE;
-    }
-
-    struct mmap_entry temp_entry;
-    temp_entry.mapid = entry->mapid;
-    hash_delete(&thread_current()->mmap_table, &temp_entry.hash_elem);
-
-    start_filesys_access();
-    file_close(entry->file);
-    end_filesys_access();
-
-    free(entry);
-  }
-
-  static void sys_mumap(struct intr_frame * f)
-  {
-    int *esp = f->esp;
-    int status = *(esp + 1);
-
-    /* Exit returns nothing */
-  }
+  free(entry);
+}
