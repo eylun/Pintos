@@ -584,10 +584,11 @@ static void sys_mmap(struct intr_frame *f)
 
   size_t bytes_into_file = 0;
   void *uaddr = addr;
+  size_t accumulator = 0;
 
   for (int i = 0; i < pages_to_map; i++)
   {
-    length = length - bytes_into_file < PGSIZE ? length - bytes_into_file : PGSIZE;
+    accumulator = length - i * PGSIZE > PGSIZE ? PGSIZE : length - i * PGSIZE;
     struct page_info *page_info = malloc(sizeof(struct page_info));
     if (!page_info)
     {
@@ -597,7 +598,7 @@ static void sys_mmap(struct intr_frame *f)
     page_info->writable = true;
     page_info->page_status = PAGE_MMAP;
     page_info->upage = uaddr;
-    page_info->page_read_bytes = length;
+    page_info->page_read_bytes = accumulator;
     page_info->start = bytes_into_file;
     page_info->mapid = entry->mapid;
     sp_insert_page_info(page_info);
