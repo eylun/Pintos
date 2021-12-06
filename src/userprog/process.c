@@ -119,7 +119,7 @@ tid_t process_execute(const char *file_name)
   hash_init(&p->fd_table, &fd_table_hash_func, &fd_table_less_func, NULL);
 
   /* Sets the first fd to 2 since 0 and 1 are reserved for the console. */
-  p->next_fd = 2;
+  p->next_fd = MIN_FD;
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(fn_copy, PRI_DEFAULT, start_process, setup);
@@ -176,6 +176,9 @@ start_process(void *_setup)
 
   /* Initialize supplemental page table */
   sp_init();
+
+  /* Initialize mmap_table */
+  mmap_init();
 
   /* Initialize interrupt frame and load executable. */
   memset(&if_, 0, sizeof if_);
@@ -321,6 +324,10 @@ void process_exit(void)
   struct thread *cur = thread_current();
   uint32_t *pd;
 
+  /* Completely destroy the thread's supplemental page table, freeing all
+     pages associated IF there are any */
+  sp_destroy_complete();
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -337,7 +344,6 @@ void process_exit(void)
     pagedir_activate(NULL);
     pagedir_destroy(pd);
   }
-
   /* Loop through this thread's list of child processes.
      If a child has died, free its process
      If a child is still alive, set its has_parent flag to false */
@@ -391,10 +397,6 @@ void process_exit(void)
       free(p);
     }
   }
-
-  /* Completely destroy the thread's supplemental page table, freeing all
-     pages associated IF there are any */
-  sp_destroy_complete();
 
   /* If the thread also holds onto a file, free it */
   if (cur->file)
