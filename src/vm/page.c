@@ -76,6 +76,7 @@ struct page_info *sp_search_page_info(struct thread *t, void *upage)
    when the vm is trying to free frames */
 void sp_destroy_page_info(struct hash_elem *e, void *aux UNUSED)
 {
+
   struct page_info *to_remove = hash_entry(e, struct page_info, elem);
   struct frame *frame_to_free = to_remove->frame;
   if (frame_to_free)
