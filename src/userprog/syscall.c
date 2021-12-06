@@ -346,7 +346,7 @@ static void sys_read(struct intr_frame *f)
   int ret = EXIT_CODE;
   if (!check_buffer_writable((void *)buffer))
   {
-    return;
+    exit(-1);
   }
 
   if (fd == STDIN_FILENO)
@@ -387,6 +387,7 @@ static void sys_write(struct intr_frame *f)
   int ret = 0;
   if (!check_buffer_writable((void *)buffer))
   {
+    f->eax = ret;
     return;
   }
   if (fd == 1)
@@ -660,8 +661,10 @@ static void sys_munmap(struct intr_frame *f)
       {
         mmap_write_back_data(entry, kaddr, page_info->start, page_info->page_read_bytes);
       }
+      ft_destroy_frame(&page_info->frame);
     }
 
+    /* Free user page in sp_table */
     struct page_info temp_page_info;
     temp_page_info.upage = uaddr;
     hash_delete(sp_table, &temp_page_info.elem);
@@ -669,6 +672,7 @@ static void sys_munmap(struct intr_frame *f)
     uaddr += PGSIZE;
   }
 
+  /* Finds and deletes the mmap_entry*/
   struct mmap_entry temp_entry;
   temp_entry.mapid = entry->mapid;
   hash_delete(&thread_current()->mmap_table, &temp_entry.hash_elem);
