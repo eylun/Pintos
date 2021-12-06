@@ -1,4 +1,6 @@
 #include "vm/mmap.h"
+#include "vm/frame.h"
+#include "vm/page.h"
 #include "threads/palloc.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
@@ -15,6 +17,67 @@ void mmap_init(void)
     struct thread *cur = thread_current();
     hash_init(&cur->mmap_table, mmap_table_hash_func, mmap_table_less_func, NULL);
     cur->next_mmapid = 0;
+}
+
+void mmap_unmap(mapid_t mapid)
+{
+    struct hash *mmap_table = &thread_current()->mmap_table;
+    struct mmap_entry *entry = mmap_search_mapping(mmap_table, mapid);
+
+    if (!entry)
+    {
+        return;
+    }
+
+    start_filesys_access();
+    size_t file_size = file_length(entry->file);
+    end_filesys_access();
+
+    int num_pages = file_size / PGSIZE;
+    if (file_size % PGSIZE != 0)
+    {
+        num_pages++;
+    }
+
+    void *uaddr = entry->uaddr;
+
+    struct hash *sp_table = &thread_current()->sp_table;
+
+    for (int i = 0; i < num_pages; i++)
+    {
+        struct page_info *page_info = sp_search_page_info(thread_current(), uaddr);
+
+        if (!page_info)
+        {
+            return;
+        }
+        if (page_info->page_status == PAGE_MMAP)
+        {
+            void *kaddr = pagedir_get_page(thread_current()->pagedir, uaddr);
+            if (pagedir_is_dirty(thread_current()->pagedir, page_info->upage))
+            {
+                mmap_write_back_data(entry, kaddr, page_info->start, page_info->page_read_bytes);
+            }
+        }
+
+        /* Free user page in sp_table */
+        struct page_info temp_page_info;
+        temp_page_info.upage = uaddr;
+        hash_delete(sp_table, &temp_page_info.elem);
+
+        uaddr += PGSIZE;
+    }
+
+    /* Finds and deletes the mmap_entry*/
+    struct mmap_entry temp_entry;
+    temp_entry.mapid = entry->mapid;
+    hash_delete(&thread_current()->mmap_table, &temp_entry.hash_elem);
+
+    start_filesys_access();
+    file_close(entry->file);
+    end_filesys_access();
+
+    free(entry);
 }
 
 struct mmap_entry *mmap_search_mapping(struct hash *mmap_table, mapid_t mapid)

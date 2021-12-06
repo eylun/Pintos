@@ -1,6 +1,7 @@
 #include <string.h>
 #include "vm/page.h"
 #include "vm/frame.h"
+#include "vm/mmap.h"
 #include "threads/palloc.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
@@ -79,6 +80,14 @@ void sp_destroy_page_info(struct hash_elem *e, void *aux UNUSED)
   struct frame *frame_to_free = to_remove->frame;
   if (frame_to_free)
   {
+    if (frame_to_free->type == MMAP && pagedir_is_dirty(thread_current()->pagedir, frame_to_free->upage))
+    {
+      mmap_write_back_data(
+          mmap_search_mapping(&thread_current()->mmap_table, to_remove->mapid),
+          pagedir_get_page(thread_current()->pagedir, to_remove->upage),
+          to_remove->start,
+          to_remove->page_read_bytes);
+    }
     /* kpage is set to NULL because the page has been wiped when
        pagedir_destroy was called. ft_destroy_frame() will not free pages
        if the pointer of the frame is NULL */

@@ -324,6 +324,10 @@ void process_exit(void)
   struct thread *cur = thread_current();
   uint32_t *pd;
 
+  /* Completely destroy the thread's supplemental page table, freeing all
+     pages associated IF there are any */
+  sp_destroy_complete();
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -340,7 +344,6 @@ void process_exit(void)
     pagedir_activate(NULL);
     pagedir_destroy(pd);
   }
-
   /* Loop through this thread's list of child processes.
      If a child has died, free its process
      If a child is still alive, set its has_parent flag to false */
@@ -394,10 +397,6 @@ void process_exit(void)
       free(p);
     }
   }
-
-  /* Completely destroy the thread's supplemental page table, freeing all
-     pages associated IF there are any */
-  sp_destroy_complete();
 
   /* If the thread also holds onto a file, free it */
   if (cur->file)
