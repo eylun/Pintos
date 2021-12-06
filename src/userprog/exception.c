@@ -147,16 +147,9 @@ page_fault(struct intr_frame *f)
    not_present = (f->error_code & PF_P) == 0;
    write = (f->error_code & PF_W) != 0;
    user = (f->error_code & PF_U) != 0;
-   // printf("exception: there is a page fault at : %x\n", fault_addr);
    /* Virtual Memory Implementation */
    if (!not_present || !vm_page_fault(fault_addr, f->esp))
    {
-      /* Check if current thread is running a user process, if it is, give it
-         an exit code of -1. */
-      if (thread_current()->process)
-      {
-         thread_current()->process->exit_code = TID_ERROR;
-      }
-      exit(-1);
+      kill(f);
    }
 }
