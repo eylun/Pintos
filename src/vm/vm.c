@@ -18,7 +18,7 @@
 static struct lock vm_lock;
 
 static void *load_swap(struct page_info *);
-static void *load_file(struct page_info *, bool);
+static void *load_file(struct page_info *, enum frame_types);
 static void evict_and_swap(void);
 
 void start_vm_access(void)
@@ -112,17 +112,17 @@ void *vm_page_fault(void *fault_addr, void *esp)
     }
     return NULL;
   }
-
   switch (page_info->page_status)
   {
   case PAGE_SWAP:
     return load_swap(page_info);
+  case PAGE_MMAP:
+    return load_file(page_info, MMAP);
   case PAGE_FILESYS:
-    return load_file(page_info, NO_ZERO);
   case PAGE_ZERO:
-    return load_file(page_info, ZERO);
+    return load_file(page_info, FILE);
   default:
-    PANIC("This should not happen\n");
+    PANIC("Invalid Page Status\n");
   }
 }
 
@@ -146,7 +146,7 @@ static void *load_swap(struct page_info *page_info)
   return kpage;
 }
 
-static void *load_file(struct page_info *page_info, bool non_zero)
+static void *load_file(struct page_info *page_info, enum frame_types status)
 {
   void *kpage;
   // struct frame *frame = frame_list_find_upage(page_info->upage);
@@ -164,7 +164,7 @@ static void *load_file(struct page_info *page_info, bool non_zero)
   //   page_info->frame = frame;
   //   return frame->kpage;
   // }
-  kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage, FILE);
+  kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage, status);
   if (!kpage)
   {
     return NULL;
@@ -177,7 +177,7 @@ static void *load_file(struct page_info *page_info, bool non_zero)
   }
 
   /* Load data into the page. */
-  if (non_zero)
+  if (page_info->page_read_bytes != 0)
   {
     start_filesys_access();
     file_seek(page_info->file, page_info->start);
@@ -191,6 +191,7 @@ static void *load_file(struct page_info *page_info, bool non_zero)
   }
   /* The value page_zero_bytes is equal to PGSIZE - page_info->page_read_bytes */
   memset(kpage + page_info->page_read_bytes, 0, PGSIZE - page_info->page_read_bytes);
+  // printf("%x\n", kpage);
   return kpage;
 }
 
@@ -199,14 +200,47 @@ static void evict_and_swap(void)
   /* The evicted frame is no longer present in the frame table/list */
   struct frame *evicted = ft_evict();
   struct page_info *page_info = sp_search_page_info(evicted->owner, evicted->upage);
-  size_t index = st_insert(evicted->upage);
-  /* Clear the pagedir of the owner so it can no longer access this frame */
-  pagedir_clear_page(evicted->owner->pagedir, evicted->upage);
+  size_t index;
+  switch (evicted->type)
+  {
+  case STACK:
+    index = st_insert(evicted->upage);
+    start_sp_access(evicted->owner);
+    page_info->page_status = PAGE_SWAP;
+    page_info->index = index;
+    end_sp_access(evicted->owner);
+    break;
+  case FILE:
+    /* Check if these frames have been written to. If so, write them to the
+       stack. If not, just remove them. */
+    if (pagedir_is_dirty(evicted->owner->pagedir, evicted->upage))
+    {
+      index = st_insert(evicted->upage);
+      start_sp_access(evicted->owner);
+      page_info->page_status = PAGE_SWAP;
+      page_info->index = index;
+      end_sp_access(evicted->owner);
+    }
+    break;
+  case MMAP:
+    if (pagedir_is_dirty(evicted->owner->pagedir, evicted->upage))
+    {
+      mmap_write_back_data(
+          mmap_search_mapping(&evicted->owner->mmap_table, page_info->mapid),
+          pagedir_get_page(thread_current()->pagedir, evicted->upage),
+          page_info->start,
+          page_info->page_read_bytes);
+    }
+    break;
+  default:
+    PANIC("Invalid Frame Type\n");
+  }
+
   start_sp_access(evicted->owner);
   page_info->frame = NULL;
-  page_info->page_status = PAGE_SWAP;
-  page_info->index = index;
   end_sp_access(evicted->owner);
+  /* Clear the pagedir of the owner so it can no longer access this frame */
+  pagedir_clear_page(evicted->owner->pagedir, evicted->upage);
   /* Free the page of the evicted frame and the frame itself */
   palloc_free_page(evicted->kpage);
   free(evicted);

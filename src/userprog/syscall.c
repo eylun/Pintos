@@ -13,6 +13,7 @@
 #include "lib/kernel/hash.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "vm/frame.h"
 #include "vm/mmap.h"
 #include "vm/page.h"
 
@@ -109,13 +110,14 @@ syscall_handler(struct intr_frame *f)
 }
 
 /* Check if a buffer is writable. */
-static void check_buffer_writable(void *buffer)
+static bool check_buffer_writable(void *buffer)
 {
   struct page_info *page_info = sp_search_page_info(thread_current(), pg_round_down(buffer));
   if (page_info && !page_info->writable)
   {
-    exit(EXIT_CODE);
+    return false;
   }
+  return true;
 }
 
 /* validate_memory takes in a pointer and an arguments parameter.
@@ -339,10 +341,14 @@ static void sys_read(struct intr_frame *f)
   unsigned size = *(unsigned *)(esp + 3);
 
   validate_memory((void *)buffer, 1);
-  check_buffer_writable((void *)buffer);
   // validate_buffer((void *)buffer, size);
 
   int ret = EXIT_CODE;
+  if (!check_buffer_writable((void *)buffer))
+  {
+    f->eax = ret;
+    return;
+  }
 
   if (fd == STDIN_FILENO)
   {
@@ -377,10 +383,14 @@ static void sys_write(struct intr_frame *f)
   unsigned size = *(unsigned *)(esp + 3);
 
   validate_memory((void *)buffer, 1);
-  check_buffer_writable((void *)buffer);
   // validate_buffer((void *)buffer, size);
 
   int ret = 0;
+  if (!check_buffer_writable((void *)buffer))
+  {
+    f->eax = ret;
+    return;
+  }
   if (fd == 1)
   {
     putbuf(buffer, size);
@@ -592,6 +602,8 @@ static void sys_mmap(struct intr_frame *f)
     {
       exit(EXIT_CODE);
     }
+    page_info->file = file;
+    page_info->writable = true;
     page_info->page_status = PAGE_MMAP;
     page_info->upage = uaddr;
     page_info->page_read_bytes = length;
