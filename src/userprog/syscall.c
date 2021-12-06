@@ -385,11 +385,7 @@ static void sys_write(struct intr_frame *f)
   // validate_buffer((void *)buffer, size);
 
   int ret = 0;
-  if (!check_buffer_writable((void *)buffer))
-  {
-    f->eax = ret;
-    return;
-  }
+
   if (fd == 1)
   {
     putbuf(buffer, size);
@@ -413,6 +409,7 @@ static void sys_write(struct intr_frame *f)
     }
   }
 
+  /* Return result by setting eax value in interrupt frame */
   f->eax = ret;
 }
 
@@ -510,7 +507,6 @@ static void sys_mmap(struct intr_frame *f)
   /* Pintos assumes virtual page 0 is not mapped and fd = 0 and fd = 1 is not mappable */
   if (addr == 0 || fd == 0 || fd == 1)
   {
-    // PANIC("help");
     f->eax = MMAP_ERROR;
     return;
   }
@@ -518,14 +514,12 @@ static void sys_mmap(struct intr_frame *f)
   /* Checks that addr is a user virtual address */
   if (!is_user_vaddr(addr))
   {
-    // PANIC("help me");
     exit(EXIT_CODE);
   }
 
   /* Checks that addr is page aligned */
   if (pg_ofs(addr) != 0)
   {
-    // PANIC("help me please");
     f->eax = MMAP_ERROR;
     return;
   }
@@ -540,7 +534,6 @@ static void sys_mmap(struct intr_frame *f)
     f->eax = MMAP_ERROR;
     return;
   }
-  /* TODO: Create a function to retrieve file_descriptor given fd */
   struct file_descriptor *open_descriptor = hash_entry(elem, struct file_descriptor, hash_elem);
   if (open_descriptor == NULL)
   {
@@ -573,7 +566,6 @@ static void sys_mmap(struct intr_frame *f)
   {
     if (sp_search_page_info(thread_current(), addr + i * PGSIZE))
     {
-      // PANIC("help ,");
       f->eax = MMAP_ERROR;
       return;
     }
@@ -618,7 +610,6 @@ static void sys_mmap(struct intr_frame *f)
   f->eax = entry->mapid;
 }
 
-/* TODO: Implement sys_munmap and create helper functions */
 static void sys_munmap(struct intr_frame *f)
 {
   int *esp = f->esp;

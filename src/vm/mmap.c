@@ -53,7 +53,6 @@ void mmap_unmap(mapid_t mapid)
         }
         if (page_info->page_status == PAGE_MMAP)
         {
-            // PANIC("HERE              ---------          \n");
             void *kaddr = pagedir_get_page(thread_current()->pagedir, uaddr);
 
             if (pagedir_is_dirty(thread_current()->pagedir, page_info->upage))

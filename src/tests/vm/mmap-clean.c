@@ -22,8 +22,11 @@ void test_main(void)
     fail("read of mmap'd file reported bad data");
 
   /* Modify file. */
+
   CHECK(write(handle, overwrite, strlen(overwrite)) == (int)strlen(overwrite),
         "write \"sample.txt\"");
+
+  // printf(write(handle, overwrite, strlen(overwrite)));
 
   /* Close mapping.  Data should not be written back, because we
      didn't modify it via the mapping. */
@@ -40,7 +43,7 @@ void test_main(void)
   if (memcmp(buffer, overwrite, strlen(overwrite)) || memcmp(buffer + strlen(overwrite), sample + strlen(overwrite),
                                                              strlen(sample) - strlen(overwrite)))
   {
-    printf("%d", memcmp(buffer, sample, strlen(sample)));
+    // printf("%d", memcmp(buffer, sample, strlen(sample)));
     if (!memcmp(buffer, sample, strlen(sample)))
       fail("munmap wrote back clean page");
     else
