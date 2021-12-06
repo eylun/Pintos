@@ -13,6 +13,7 @@
 #include "lib/kernel/hash.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "vm/frame.h"
 #include "vm/mmap.h"
 #include "vm/page.h"
 
@@ -109,13 +110,14 @@ syscall_handler(struct intr_frame *f)
 }
 
 /* Check if a buffer is writable. */
-static void check_buffer_writable(void *buffer)
+static bool check_buffer_writable(void *buffer)
 {
   struct page_info *page_info = sp_search_page_info(thread_current(), pg_round_down(buffer));
   if (page_info && !page_info->writable)
   {
-    exit(EXIT_CODE);
+    return false;
   }
+  return true;
 }
 
 /* validate_memory takes in a pointer and an arguments parameter.
@@ -339,10 +341,13 @@ static void sys_read(struct intr_frame *f)
   unsigned size = *(unsigned *)(esp + 3);
 
   validate_memory((void *)buffer, 1);
-  check_buffer_writable((void *)buffer);
   // validate_buffer((void *)buffer, size);
 
   int ret = EXIT_CODE;
+  if (!check_buffer_writable((void *)buffer))
+  {
+    exit(-1);
+  }
 
   if (fd == STDIN_FILENO)
   {
@@ -377,10 +382,10 @@ static void sys_write(struct intr_frame *f)
   unsigned size = *(unsigned *)(esp + 3);
 
   validate_memory((void *)buffer, 1);
-  check_buffer_writable((void *)buffer);
   // validate_buffer((void *)buffer, size);
 
   int ret = 0;
+
   if (fd == 1)
   {
     putbuf(buffer, size);
@@ -404,6 +409,7 @@ static void sys_write(struct intr_frame *f)
     }
   }
 
+  /* Return result by setting eax value in interrupt frame */
   f->eax = ret;
 }
 
@@ -501,7 +507,6 @@ static void sys_mmap(struct intr_frame *f)
   /* Pintos assumes virtual page 0 is not mapped and fd = 0 and fd = 1 is not mappable */
   if (addr == 0 || fd == 0 || fd == 1)
   {
-    // PANIC("help");
     f->eax = MMAP_ERROR;
     return;
   }
@@ -509,14 +514,12 @@ static void sys_mmap(struct intr_frame *f)
   /* Checks that addr is a user virtual address */
   if (!is_user_vaddr(addr))
   {
-    // PANIC("help me");
     exit(EXIT_CODE);
   }
 
   /* Checks that addr is page aligned */
   if (pg_ofs(addr) != 0)
   {
-    // PANIC("help me please");
     f->eax = MMAP_ERROR;
     return;
   }
@@ -531,7 +534,6 @@ static void sys_mmap(struct intr_frame *f)
     f->eax = MMAP_ERROR;
     return;
   }
-  /* TODO: Create a function to retrieve file_descriptor given fd */
   struct file_descriptor *open_descriptor = hash_entry(elem, struct file_descriptor, hash_elem);
   if (open_descriptor == NULL)
   {
@@ -564,7 +566,6 @@ static void sys_mmap(struct intr_frame *f)
   {
     if (sp_search_page_info(thread_current(), addr + i * PGSIZE))
     {
-      // PANIC("help ,");
       f->eax = MMAP_ERROR;
       return;
     }
@@ -583,18 +584,21 @@ static void sys_mmap(struct intr_frame *f)
 
   size_t bytes_into_file = 0;
   void *uaddr = addr;
+  size_t accumulator = 0;
 
   for (int i = 0; i < pages_to_map; i++)
   {
-    length = length - bytes_into_file < PGSIZE ? length - bytes_into_file : PGSIZE;
+    accumulator = length - i * PGSIZE > PGSIZE ? PGSIZE : length - i * PGSIZE;
     struct page_info *page_info = malloc(sizeof(struct page_info));
     if (!page_info)
     {
       exit(EXIT_CODE);
     }
+    page_info->file = file;
+    page_info->writable = true;
     page_info->page_status = PAGE_MMAP;
     page_info->upage = uaddr;
-    page_info->page_read_bytes = length;
+    page_info->page_read_bytes = accumulator;
     page_info->start = bytes_into_file;
     page_info->mapid = entry->mapid;
     sp_insert_page_info(page_info);
@@ -607,65 +611,10 @@ static void sys_mmap(struct intr_frame *f)
   f->eax = entry->mapid;
 }
 
-/* TODO: Implement sys_munmap and create helper functions */
 static void sys_munmap(struct intr_frame *f)
 {
   int *esp = f->esp;
   mapid_t mapid = *(esp + 1);
 
-  struct hash *mmap_table = &thread_current()->mmap_table;
-  struct mmap_entry *entry = mmap_search_mapping(mmap_table, mapid);
-
-  if (!entry)
-  {
-    return;
-  }
-
-  start_filesys_access();
-  size_t file_size = file_length(entry->file);
-  end_filesys_access();
-
-  int num_pages = file_size / PGSIZE;
-  if (file_size % PGSIZE != 0)
-  {
-    num_pages++;
-  }
-
-  void *uaddr = entry->uaddr;
-
-  struct hash *sp_table = &thread_current()->sp_table;
-
-  for (int i = 0; i < num_pages; i++)
-  {
-    struct page_info *page_info = sp_search_page_info(thread_current(), uaddr);
-
-    if (!page_info)
-    {
-      return;
-    }
-    if (page_info->page_status == PAGE_MMAP)
-    {
-      void *kaddr = pagedir_get_page(thread_current()->pagedir, uaddr);
-      if (pagedir_is_dirty(thread_current()->pagedir, page_info->upage))
-      {
-        mmap_write_back_data(entry, kaddr, page_info->start, page_info->page_read_bytes);
-      }
-    }
-
-    struct page_info temp_page_info;
-    temp_page_info.upage = uaddr;
-    hash_delete(sp_table, &temp_page_info.elem);
-
-    uaddr += PGSIZE;
-  }
-
-  struct mmap_entry temp_entry;
-  temp_entry.mapid = entry->mapid;
-  hash_delete(&thread_current()->mmap_table, &temp_entry.hash_elem);
-
-  start_filesys_access();
-  file_close(entry->file);
-  end_filesys_access();
-
-  free(entry);
+  mmap_unmap(mapid);
 }
