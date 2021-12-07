@@ -105,7 +105,6 @@ syscall_handler(struct intr_frame *f)
   /* All syscall handlers work under the assumption that the
      arguments have been validated. This is safe to assume because validation
      occurs right before the calling of the handlers */
-  // printf("syscall: %d\n", *esp);
   syscalls[*esp](f);
 }
 

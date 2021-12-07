@@ -34,11 +34,6 @@ void end_sp_access(struct thread *t)
 
 void sp_insert_page_info(struct page_info *page_info)
 {
-  /* If page_read_bytes is 0, then page_zero_bytes is PGSIZE */
-  if (page_info->page_read_bytes == 0)
-  {
-    page_info->page_status = PAGE_ZERO;
-  }
   struct thread *t = thread_current();
   /* Insert the newly created page_info into this process' sp_table */
   /* Insert page metadata into hash table through hash_replace due to GCC
@@ -93,6 +88,12 @@ void sp_destroy_page_info(struct hash_elem *e, void *aux UNUSED)
        pagedir_destroy was called. ft_destroy_frame() will not free pages
        if the pointer of the frame is NULL */
     ft_destroy_frame(frame_to_free);
+  }
+  /* Some of this thread's pages may still be in the swap table. Remove them if
+     we find any in the supplemental page table */
+  if (to_remove->page_status == PAGE_SWAP)
+  {
+    st_free(to_remove->index);
   }
   hash_delete(&thread_current()->sp_table, e);
   free(to_remove);

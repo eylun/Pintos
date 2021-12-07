@@ -79,7 +79,6 @@ struct frame *ft_request_frame(enum palloc_flags flags, void *upage)
   new_frame->kpage = kpage;
   new_frame->upage = upage;
   new_frame->owner = thread_current();
-  // printf("I am inserting a new frame at %x: kpage: %x upage: %x owner: %x\n", new_frame, kpage, upage, thread_current());
   lock_init(&new_frame->lock);
   hash_insert(&ft, &new_frame->hashelem);
   list_push_back(&frame_list, &new_frame->listelem);

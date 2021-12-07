@@ -15,8 +15,8 @@ enum frame_types
 
 struct pd_share
 {
-  struct list_elem elem;
-  uint32_t *pd;
+  struct list_elem elem; /* List element for each frame's sharing list */
+  uint32_t *pd;          /* Page directory of the thread that inserted this */
 };
 
 struct frame

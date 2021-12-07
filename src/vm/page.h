@@ -11,7 +11,6 @@ enum page_status
   PAGE_STACK,
   PAGE_FILESYS,
   PAGE_SWAP,
-  PAGE_ZERO,
   PAGE_MMAP
 };
 
@@ -26,7 +25,7 @@ struct page_info
   struct frame *frame;          /* Pointer to frame corresponding to this page */
   enum page_status page_status; /* Stores page current status */
   mapid_t mapid;                /* Memory map id (For mmap only) */
-  int index;                    /* I'm not sure what this is but we'll find out */
+  int index;                    /* Index for swapping if this page is a swap */
 };
 
 /* Initialization */
