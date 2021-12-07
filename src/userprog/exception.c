@@ -150,6 +150,7 @@ page_fault(struct intr_frame *f)
    /* Virtual Memory Implementation */
    if (!not_present || !vm_page_fault(fault_addr, f->esp))
    {
+      // printf("%s, fault at %x\n", thread_current()->name, fault_addr);
       kill(f);
    }
 }

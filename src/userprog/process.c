@@ -188,7 +188,6 @@ start_process(void *_setup)
 
   /* Signal the parent process if properly executed */
   success = load(thread_current()->name, &if_.eip, &if_.esp);
-
   /* Acquire struct process from the setup data*/
   struct process *p = setup->p;
   p->has_parent = true;
@@ -227,7 +226,6 @@ start_process(void *_setup)
     /* Store the stack address for pushing up later */
     arg->stack_addr = if_.esp;
   }
-
   /* Null Pointer Sentinel */
   if_.esp -= sizeof(void *);
   memset(if_.esp, 0, sizeof(void *));
@@ -330,20 +328,20 @@ void process_exit(void)
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-  pd = cur->pagedir;
-  if (pd != NULL)
-  {
-    /* Correct ordering here is crucial.  We must set
-       cur->pagedir to NULL before switching page directories,
-       so that a timer interrupt can't switch back to the
-       process page directory.  We must activate the base page
-       directory before destroying the process's page
-       directory, or our active page directory will be one
-       that's been freed (and cleared). */
-    cur->pagedir = NULL;
-    pagedir_activate(NULL);
-    pagedir_destroy(pd);
-  }
+  // pd = cur->pagedir;
+  // if (pd != NULL)
+  // {
+  //   /* Correct ordering here is crucial.  We must set
+  //      cur->pagedir to NULL before switching page directories,
+  //      so that a timer interrupt can't switch back to the
+  //      process page directory.  We must activate the base page
+  //      directory before destroying the process's page
+  //      directory, or our active page directory will be one
+  //      that's been freed (and cleared). */
+  //   cur->pagedir = NULL;
+  //   pagedir_activate(NULL);
+  //   pagedir_destroy(pd);
+  // }
   /* Loop through this thread's list of child processes.
      If a child has died, free its process
      If a child is still alive, set its has_parent flag to false */

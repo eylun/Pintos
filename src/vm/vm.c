@@ -52,7 +52,7 @@ void vm_init(void)
     3b. Request for a frame again (ONLY IF SWAPPED)
     4b. Asks the frame table to insert the frame.
     5b. Returns the pointer to the page. */
-void *vm_alloc_get_page(enum palloc_flags flag, void *upage, enum frame_types type)
+void *vm_alloc_get_page(enum palloc_flags flag, void *upage, enum frame_types type, struct file *file)
 {
   ASSERT(check_page_alignment(upage));
   start_vm_access();
@@ -67,6 +67,10 @@ void *vm_alloc_get_page(enum palloc_flags flag, void *upage, enum frame_types ty
     ASSERT(new_frame != NULL);
   }
   new_frame->type = type;
+  if (type == FILE)
+  {
+    new_frame->file = file;
+  }
   end_vm_access();
   return new_frame->kpage;
 }
@@ -128,7 +132,7 @@ void *vm_page_fault(void *fault_addr, void *esp)
 
 static void *load_swap(struct page_info *page_info)
 {
-  void *kpage = vm_alloc_get_page(PAL_USER, page_info->upage, STACK);
+  void *kpage = vm_alloc_get_page(PAL_USER, page_info->upage, STACK, NULL);
   if (!kpage)
   {
     return NULL;
@@ -149,22 +153,32 @@ static void *load_swap(struct page_info *page_info)
 static void *load_file(struct page_info *page_info, enum frame_types status)
 {
   void *kpage;
-  // struct frame *frame = frame_list_find_upage(page_info->upage);
-  // // printf("the frame is: %x with upage :%x\n", frame, page_info->upage);
-  // /* If kpage is NULL, get a new page of memory.
-  //    If kpage is not NULL, that means it has already been allocated in the past.
-  //    */
-  // if (frame)
-  // {
-  //   // printf("frame exists: %x\n", frame);
-  //   if (!install_page(page_info->upage, frame->kpage, page_info->writable))
-  //   {
-  //     return NULL;
-  //   }
-  //   page_info->frame = frame;
-  //   return frame->kpage;
-  // }
-  kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage, status);
+  /* Sharing
+     Loop through the currently present list of frames.
+     If a frame with the upage we are looking for already exists, we do not need
+     to allocate a new page for it, but just install it.
+     Since the frame should already have a page that has data written into it,
+     the function returns directly from there */
+  struct frame *frame = frame_list_find(page_info);
+  // printf("the frame is: %x with upage :%x\n", frame, page_info->upage);
+  /* If kpage is NULL, get a new page of memory.
+     If kpage is not NULL, that means it has already been allocated in the past.
+     */
+  if (frame)
+  {
+    // printf("frame exists: %x\n", frame);
+    if (!install_page(page_info->upage, frame->kpage, page_info->writable))
+    {
+      return NULL;
+    }
+    struct thread *t = thread_current();
+    start_sp_access(t);
+    page_info->frame = frame;
+    end_sp_access(t);
+    ft_add_pd_to_frame(frame, thread_current()->pagedir);
+    return frame->kpage;
+  }
+  kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage, status, page_info->file);
   if (!kpage)
   {
     return NULL;
@@ -199,6 +213,10 @@ static void evict_and_swap(void)
 {
   /* The evicted frame is no longer present in the frame table/list */
   struct frame *evicted = ft_evict();
+  /* Acquire frame lock to prevent other processes from tapping into this frame */
+  lock_acquire(&evicted->lock);
+  /* Destroy this frame for all other pagedirs */
+  ft_destroy_frame_sharing(evicted);
   struct page_info *page_info = sp_search_page_info(evicted->owner, evicted->upage);
   size_t index;
   switch (evicted->type)
@@ -255,6 +273,14 @@ void vm_free_page(void *kpage)
   start_vm_access();
   struct frame *frame = ft_search_frame(kpage);
   ASSERT(frame); /* If the search fails, panic */
+  struct thread *t = thread_current();
+  struct page_info *page_info = sp_search_page_info(t, frame->upage);
+  if (page_info)
+  {
+    start_sp_access(t);
+    page_info->frame = NULL;
+    end_sp_access(t);
+  }
   ft_destroy_frame(frame);
   end_vm_access();
 }
@@ -274,7 +300,7 @@ void *vm_grow_stack(void *upage)
   page_info->writable = true;
   // printf("addr: %x read: %d, zero: %d\n", upage, page_read_bytes, page_zero_bytes);
   sp_insert_page_info(page_info);
-  void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, upage, STACK);
+  void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, upage, STACK, NULL);
   if (kpage != NULL)
   {
     if (!install_page(upage, kpage, true))

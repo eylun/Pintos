@@ -15,7 +15,7 @@
 void vm_init(void);
 
 /* Function to call when a new page needs to be retrieved */
-void *vm_alloc_get_page(enum palloc_flags, void *, enum frame_types);
+void *vm_alloc_get_page(enum palloc_flags, void *, enum frame_types, struct file *);
 
 /* Function to call upon a virtual memory page fault */
 void *vm_page_fault(void *, void *);

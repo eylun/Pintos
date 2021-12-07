@@ -92,7 +92,6 @@ void sp_destroy_page_info(struct hash_elem *e, void *aux UNUSED)
     /* kpage is set to NULL because the page has been wiped when
        pagedir_destroy was called. ft_destroy_frame() will not free pages
        if the pointer of the frame is NULL */
-    frame_to_free->kpage = NULL;
     ft_destroy_frame(frame_to_free);
   }
   hash_delete(&thread_current()->sp_table, e);
