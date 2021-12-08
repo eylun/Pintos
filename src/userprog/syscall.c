@@ -13,6 +13,7 @@
 #include "lib/kernel/hash.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "vm/vm.h"
 #include "vm/frame.h"
 #include "vm/mmap.h"
 #include "vm/page.h"
@@ -149,34 +150,6 @@ static void validate_memory(void *pointer, int arguments)
     }
   }
 }
-/* validate_buffer validates the memory that an entire buffer occupies.
-   This function usually validates pointers which are passed in, not
-   pointers from the interrupt frame.
-   It takes in the pointer itself, as well as a size limit.
-   For every 4096 bytes, there is a need to recheck the pagedir.
-   THIS FUNCTION WILL BE CALLED ONLY AFTER validate_memory. This is for
-   the sys_exec handler to not double-validate */
-static void validate_buffer(void *pointer, unsigned size)
-{
-  /* The start of the pointer has already been validated, no need to
-     validate again. */
-  unsigned page_checker = PGSIZE;
-  for (; page_checker < size; page_checker += PGSIZE)
-  {
-    /* Revalidate the pointer for every PGSIZE bytes */
-    validate_memory(pointer + page_checker, 1);
-  }
-  /* Validate the end of the buffer IF the starting pointer lies on a page
-     boundary. When the starting pointer lies on a page boundary, there is no
-     need to validate the pointer of the end of the buffer, since the start of
-     the last page is validated in the for loop
-      */
-  if (pointer != pg_round_down(pointer))
-  {
-    /* Validate the end of the buffer */
-    validate_memory(pointer + size, 1);
-  }
-}
 
 static void sys_halt(struct intr_frame *f UNUSED)
 {
@@ -213,7 +186,6 @@ static void sys_exec(struct intr_frame *f)
      string. Note that it is possible that while cmd_line points to user
      memory, it might not point to an actual string. */
   validate_memory((void *)cmd_line, 1);
-  // validate_buffer((void *)cmd_line, strnlen(cmd_line, PGSIZE));
 
   f->eax = process_execute(cmd_line);
 }
@@ -234,7 +206,6 @@ static void sys_create(struct intr_frame *f)
   unsigned initial_size = *(unsigned *)(esp + 2);
 
   validate_memory((void *)file, 1);
-  // validate_buffer((void *)file, FILE_MAX);
 
   start_filesys_access();
 
@@ -250,7 +221,6 @@ static void sys_remove(struct intr_frame *f)
   const char *file = *(const char **)(esp + 1);
 
   validate_memory((void *)file, 1);
-  // validate_buffer((void *)file, FILE_MAX);
 
   start_filesys_access();
 
@@ -265,7 +235,6 @@ static void sys_open(struct intr_frame *f)
   int *esp = f->esp;
   const char *filename = *(const char **)(esp + 1);
   validate_memory((void *)filename, 1);
-  // validate_buffer((void *)filename, FILE_MAX);
 
   start_filesys_access();
 
@@ -298,7 +267,7 @@ static void sys_open(struct intr_frame *f)
 
 /* Returns a hash_elem equal to the file_descriptor's hash_elem (fd) from
   the current process's fd_table or null pointer if no such element exists */
-static struct hash_elem *get_elem(struct file_descriptor *descriptor, int fd)
+struct hash_elem *get_elem(struct file_descriptor *descriptor, int fd)
 {
   struct thread *current_thread = thread_current();
   descriptor->fd = fd;
@@ -340,7 +309,6 @@ static void sys_read(struct intr_frame *f)
   unsigned size = *(unsigned *)(esp + 3);
 
   validate_memory((void *)buffer, 1);
-  // validate_buffer((void *)buffer, size);
 
   int ret = EXIT_CODE;
   if (!check_buffer_writable((void *)buffer))
@@ -381,7 +349,6 @@ static void sys_write(struct intr_frame *f)
   unsigned size = *(unsigned *)(esp + 3);
 
   validate_memory((void *)buffer, 1);
-  // validate_buffer((void *)buffer, size);
 
   int ret = 0;
 
@@ -503,111 +470,7 @@ static void sys_mmap(struct intr_frame *f)
   int fd = *(esp + 1);
   void *addr = (void *)*(esp + 2);
 
-  /* Pintos assumes virtual page 0 is not mapped and fd = 0 and fd = 1 is not mappable */
-  if (addr == 0 || fd == 0 || fd == 1)
-  {
-    f->eax = MMAP_ERROR;
-    return;
-  }
-
-  /* Checks that addr is a user virtual address */
-  if (!is_user_vaddr(addr))
-  {
-    exit(EXIT_CODE);
-  }
-
-  /* Checks that addr is page aligned */
-  if (pg_ofs(addr) != 0)
-  {
-    f->eax = MMAP_ERROR;
-    return;
-  }
-
-  /* Access file corresponding to the given fd */
-  /* Returns -1 if the given file_descriptor is not found in the process's fd_table */
-  struct file_descriptor descriptor;
-  struct hash_elem *elem = get_elem(&descriptor, fd);
-
-  if (elem == NULL)
-  {
-    f->eax = MMAP_ERROR;
-    return;
-  }
-  struct file_descriptor *open_descriptor = hash_entry(elem, struct file_descriptor, hash_elem);
-  if (open_descriptor == NULL)
-  {
-    f->eax = MMAP_ERROR;
-    return;
-  }
-
-  /* Memory map stays even when original file is closed or removed.
-     Need to use own file handle to the file. Done by reopening the file. */
-  start_filesys_access();
-  struct file *file = file_reopen(open_descriptor->file);
-  off_t length = file_length(file);
-  end_filesys_access();
-
-  /* Returns -1 if file has length of zero bytes */
-  if (length == 0)
-  {
-    f->eax = MMAP_ERROR;
-    return;
-  }
-
-  int pages_to_map = length / PGSIZE;
-  if (length % PGSIZE)
-  {
-    pages_to_map++;
-  }
-
-  /* Checks that the range of pages to be mapped does not overlap an existing set of mapped pages */
-  for (int i = 0; i < pages_to_map; i++)
-  {
-    if (sp_search_page_info(thread_current(), addr + i * PGSIZE))
-    {
-      f->eax = MMAP_ERROR;
-      return;
-    }
-  }
-  struct thread *cur = thread_current();
-
-  struct mmap_entry *entry = malloc(sizeof(struct mmap_entry));
-  if (!entry)
-  {
-    exit(EXIT_CODE);
-  }
-
-  entry->mapid = cur->next_mmapid++;
-  entry->file = file;
-  entry->uaddr = addr;
-
-  size_t bytes_into_file = 0;
-  void *uaddr = addr;
-  size_t accumulator = 0;
-
-  for (int i = 0; i < pages_to_map; i++)
-  {
-    accumulator = length - i * PGSIZE > PGSIZE ? PGSIZE : length - i * PGSIZE;
-    struct page_info *page_info = malloc(sizeof(struct page_info));
-    if (!page_info)
-    {
-      exit(EXIT_CODE);
-    }
-    page_info->file = file;
-    page_info->writable = true;
-    page_info->page_status = PAGE_MMAP;
-    page_info->upage = uaddr;
-    page_info->page_read_bytes = accumulator;
-    page_info->start = bytes_into_file;
-    page_info->mapid = entry->mapid;
-    sp_insert_page_info(page_info);
-    bytes_into_file += PGSIZE;
-    uaddr += PGSIZE;
-  }
-
-  hash_insert(&cur->mmap_table, &entry->hash_elem);
-
-  f->eax = entry->mapid;
+  f->eax = mmap_map(fd, addr);
 }
 
 static void sys_munmap(struct intr_frame *f)

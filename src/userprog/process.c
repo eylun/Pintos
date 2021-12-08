@@ -320,7 +320,6 @@ int process_wait(tid_t child_tid)
 void process_exit(void)
 {
   struct thread *cur = thread_current();
-  uint32_t *pd;
 
   /* Completely destroy the thread's supplemental page table, freeing all
      pages associated IF there are any */
@@ -684,7 +683,6 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-    struct thread *t = thread_current();
     /*Malloc new page_info
       Fill in page_info
       Things to fill:
@@ -713,7 +711,7 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack(void **esp)
 {
-  uint8_t *kpage, *upage = (uint8_t *)PHYS_BASE - PGSIZE;
+  uint8_t *upage = (uint8_t *)PHYS_BASE - PGSIZE;
   if (vm_grow_stack(upage))
   {
     *esp = PHYS_BASE;

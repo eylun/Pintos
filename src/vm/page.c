@@ -2,7 +2,9 @@
 #include "vm/page.h"
 #include "vm/frame.h"
 #include "vm/mmap.h"
+#include "vm/swap.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 #include "userprog/pagedir.h"
@@ -10,7 +12,8 @@
 #include "userprog/process.h"
 #include "lib/kernel/hash.h"
 
-static unsigned sp_table_hash_func(const struct hash_elem *, void *UNUSED);
+static unsigned
+sp_table_hash_func(const struct hash_elem *, void *UNUSED);
 bool sp_table_less_func(const struct hash_elem *,
                         const struct hash_elem *, void *UNUSED);
 void sp_destroy_page_info(struct hash_elem *, void *UNUSED);
@@ -32,12 +35,14 @@ void end_sp_access(struct thread *t)
   lock_release(&t->sp_table_lock);
 }
 
+/* Inserts a page info into a supplemental page table. The page info has to be
+   built outside of the function first. */
 void sp_insert_page_info(struct page_info *page_info)
 {
   struct thread *t = thread_current();
   /* Insert the newly created page_info into this process' sp_table */
   /* Insert page metadata into hash table through hash_replace due to GCC
-     complications where the same code can be inserted in the same segment */
+     complications where the same code can be inserted in the same segment. */
   start_sp_access(t);
   struct hash_elem *old_e = hash_replace(&thread_current()->sp_table, &page_info->elem);
   struct page_info *old_info;
@@ -52,6 +57,8 @@ void sp_insert_page_info(struct page_info *page_info)
   end_sp_access(t);
 }
 
+/* Searches the supplemental page table of thread t to look for a pointer
+   upage. */
 struct page_info *sp_search_page_info(struct thread *t, void *upage)
 {
   start_sp_access(t);

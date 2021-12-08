@@ -2,6 +2,7 @@
 #include "vm/frame.h"
 #include "vm/page.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 #include "userprog/pagedir.h"
@@ -118,7 +119,7 @@ struct frame *ft_search_frame(void *kpage)
    have their accessed bit reset to 0, and shifted to the back of the list. */
 struct frame *ft_evict(void)
 {
-  struct frame *evictee;
+  struct frame *evictee = NULL;
   struct list_elem *e, *refresher;
   start_ft_access();
   e = list_begin(&frame_list);
@@ -162,10 +163,9 @@ void ft_remove_frame(struct frame *frame)
    also frees the frame. */
 void ft_destroy_frame(struct frame *frame)
 {
-  lock_acquire(&frame->lock);
   start_ft_access();
+  lock_acquire(&frame->lock);
   ft_remove_frame(frame);
-  end_ft_access();
   /* If this frame's owner is destroying it.
      Free page and unset the page for all other threads using this page */
   if (frame->owner == thread_current())
@@ -183,7 +183,7 @@ void ft_destroy_frame(struct frame *frame)
   else
   {
     struct list_elem *e;
-    struct pd_share *share;
+    struct pd_share *share = NULL;
     for (e = list_begin(&frame->shared); e != list_end(&frame->shared); e = list_next(e))
     {
       share = list_entry(e, struct pd_share, elem);
@@ -193,9 +193,11 @@ void ft_destroy_frame(struct frame *frame)
         break;
       }
     }
+    ASSERT(share != NULL);
     free(share);
     lock_release(&frame->lock);
   }
+  end_ft_access();
 }
 
 /* Loop through the frame list to find a frame with a upage that contains a page
@@ -226,6 +228,7 @@ struct frame *frame_list_find(struct page_info *page_info)
 
 void ft_add_pd_to_frame(struct frame *f, uint32_t *pd)
 {
+  start_ft_access();
   lock_acquire(&f->lock);
   struct pd_share *share = malloc(sizeof(struct pd_share));
   if (!share)
@@ -235,14 +238,13 @@ void ft_add_pd_to_frame(struct frame *f, uint32_t *pd)
   share->pd = pd;
   list_push_back(&f->shared, &share->elem);
   lock_release(&f->lock);
+  end_ft_access();
 }
 
 void ft_destroy_frame_sharing(struct frame *f)
 {
-  start_ft_access();
   if (list_empty(&f->shared))
   {
-    end_ft_access();
     return;
   }
   struct list_elem *e;
@@ -252,10 +254,9 @@ void ft_destroy_frame_sharing(struct frame *f)
   {
     e = list_pop_front(&f->shared);
     share = list_entry(e, struct pd_share, elem);
-    pagedir_clear_page(share, f->upage);
+    pagedir_clear_page(share->pd, f->upage);
     free(share);
   }
-  end_ft_access();
 }
 
 unsigned frame_table_hash_func(const struct hash_elem *e, void *aux UNUSED)
