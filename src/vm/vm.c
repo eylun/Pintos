@@ -106,7 +106,7 @@ bool is_stack_access(void *fault_addr, void *esp)
    THIS ONLY HAPPENS WHEN PASSED IN FROM SYSCALL VALIDATION */
 void *vm_page_fault(void *fault_addr, void *esp)
 {
-  // Check if fault_addr is a key in this thread's SPT
+  /* Check if fault_addr is a key in this thread's SPT */
   struct thread *cur = thread_current();
   void *aligned = pg_round_down(fault_addr);
   /* Faulted address does not have a value mapped to it in the sp_table
@@ -198,7 +198,7 @@ static void *load_file(struct page_info *page_info, enum frame_types status)
   }
 
   /* Load data into the page. */
-  if (page_info->page_read_bytes != 0)
+  if (page_info->page_read_bytes != ZERO)
   {
     start_filesys_access();
     file_seek(page_info->file, page_info->start);
@@ -211,7 +211,7 @@ static void *load_file(struct page_info *page_info, enum frame_types status)
     end_filesys_access();
   }
   /* The value page_zero_bytes is equal to PGSIZE - page_info->page_read_bytes */
-  memset(kpage + page_info->page_read_bytes, 0, PGSIZE - page_info->page_read_bytes);
+  memset(kpage + page_info->page_read_bytes, ZERO, PGSIZE - page_info->page_read_bytes);
   return kpage;
 }
 

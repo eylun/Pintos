@@ -674,7 +674,6 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
   file_seek(file, ofs);
   off_t start = ofs;
   end_filesys_access();
-  // printf("loading...\n");
   while (read_bytes > 0 || zero_bytes > 0)
   {
     /* Calculate how to fill this page.
