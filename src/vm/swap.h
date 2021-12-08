@@ -24,5 +24,6 @@ void st_init(void);
 /* Controller Functions */
 size_t st_insert(void *);
 void st_retrieve(size_t, void *);
+void st_free(size_t);
 
 #endif /* vm/swap.h */

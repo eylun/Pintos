@@ -75,10 +75,10 @@ struct frame *ft_request_frame(enum palloc_flags flags, void *upage)
      number of frames, and other structures that are allocated are freed
      appropriately. */
   ASSERT(new_frame != NULL);
+  list_init(&new_frame->shared);
   new_frame->kpage = kpage;
   new_frame->upage = upage;
   new_frame->owner = thread_current();
-  // printf("I am inserting a new frame at %x: kpage: %x upage: %x owner: %x\n", new_frame, kpage, upage, thread_current());
   lock_init(&new_frame->lock);
   hash_insert(&ft, &new_frame->hashelem);
   list_push_back(&frame_list, &new_frame->listelem);
@@ -162,27 +162,53 @@ void ft_remove_frame(struct frame *frame)
    also frees the frame. */
 void ft_destroy_frame(struct frame *frame)
 {
+  lock_acquire(&frame->lock);
   start_ft_access();
   ft_remove_frame(frame);
   end_ft_access();
-  if (frame->kpage)
+  /* If this frame's owner is destroying it.
+     Free page and unset the page for all other threads using this page */
+  if (frame->owner == thread_current())
   {
-    palloc_free_page(frame->kpage);
+    ft_destroy_frame_sharing(frame);
+    if (frame->kpage)
+    {
+      palloc_free_page(frame->kpage);
+    }
+    free(frame);
+    /* No need to release lock as it no longer exists after free */
   }
-  free(frame);
+  /* If this process is not the owner of this frame, just remove itself from
+     the share list */
+  else
+  {
+    struct list_elem *e;
+    struct pd_share *share;
+    for (e = list_begin(&frame->shared); e != list_end(&frame->shared); e = list_next(e))
+    {
+      share = list_entry(e, struct pd_share, elem);
+      if (share->pd == thread_current()->pagedir)
+      {
+        list_remove(&share->elem);
+        break;
+      }
+    }
+    free(share);
+    lock_release(&frame->lock);
+  }
 }
 
 /* Loop through the frame list to find a frame with a upage that contains a page
    that is read only (type = FILE) */
-struct frame *frame_list_find_upage(void *upage)
+struct frame *frame_list_find(struct page_info *page_info)
 {
   struct list_elem *e;
   struct frame *f;
   for (e = list_begin(&frame_list); e != list_end(&frame_list); e = list_next(e))
   {
     f = list_entry(e, struct frame, listelem);
-    /* Identify a frame with the same upage */
-    if (f->upage == upage)
+    /* Identify a frame with the same upage and file */
+    if (f->upage == page_info->upage && f->file == page_info->file)
     {
       /* If the identified frame is not of type FILE, then it is
          not a read_only file. Hence it should not be shareable.
@@ -196,6 +222,40 @@ struct frame *frame_list_find_upage(void *upage)
     }
   }
   return NULL;
+}
+
+void ft_add_pd_to_frame(struct frame *f, uint32_t *pd)
+{
+  lock_acquire(&f->lock);
+  struct pd_share *share = malloc(sizeof(struct pd_share));
+  if (!share)
+  {
+    PANIC("No more kernel memory");
+  }
+  share->pd = pd;
+  list_push_back(&f->shared, &share->elem);
+  lock_release(&f->lock);
+}
+
+void ft_destroy_frame_sharing(struct frame *f)
+{
+  start_ft_access();
+  if (list_empty(&f->shared))
+  {
+    end_ft_access();
+    return;
+  }
+  struct list_elem *e;
+  struct pd_share *share;
+  /* Using method provided in list.c for freeing list elements */
+  while (!list_empty(&f->shared))
+  {
+    e = list_pop_front(&f->shared);
+    share = list_entry(e, struct pd_share, elem);
+    pagedir_clear_page(share, f->upage);
+    free(share);
+  }
+  end_ft_access();
 }
 
 unsigned frame_table_hash_func(const struct hash_elem *e, void *aux UNUSED)

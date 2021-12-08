@@ -20,6 +20,7 @@ static struct lock vm_lock;
 static void *load_swap(struct page_info *);
 static void *load_file(struct page_info *, enum frame_types);
 static void evict_and_swap(void);
+static void perform_swap(struct frame *, struct page_info *);
 
 void start_vm_access(void)
 {
@@ -52,7 +53,7 @@ void vm_init(void)
     3b. Request for a frame again (ONLY IF SWAPPED)
     4b. Asks the frame table to insert the frame.
     5b. Returns the pointer to the page. */
-void *vm_alloc_get_page(enum palloc_flags flag, void *upage, enum frame_types type)
+void *vm_alloc_get_page(enum palloc_flags flag, void *upage, enum frame_types type, struct file *file)
 {
   ASSERT(check_page_alignment(upage));
   start_vm_access();
@@ -67,6 +68,10 @@ void *vm_alloc_get_page(enum palloc_flags flag, void *upage, enum frame_types ty
     ASSERT(new_frame != NULL);
   }
   new_frame->type = type;
+  if (type == FILE)
+  {
+    new_frame->file = file;
+  }
   end_vm_access();
   return new_frame->kpage;
 }
@@ -93,11 +98,6 @@ bool is_stack_access(void *fault_addr, void *esp)
    THIS ONLY HAPPENS WHEN PASSED IN FROM SYSCALL VALIDATION */
 void *vm_page_fault(void *fault_addr, void *esp)
 {
-  // printf("vm: there is a page fault at : %x\n", fault_addr);
-  // if (fault_addr == 0)
-  // {
-  //   PANIC("WTF");
-  // }
   // Check if fault_addr is a key in this thread's SPT
   struct thread *cur = thread_current();
   void *aligned = pg_round_down(fault_addr);
@@ -119,7 +119,6 @@ void *vm_page_fault(void *fault_addr, void *esp)
   case PAGE_MMAP:
     return load_file(page_info, MMAP);
   case PAGE_FILESYS:
-  case PAGE_ZERO:
     return load_file(page_info, FILE);
   default:
     PANIC("Invalid Page Status\n");
@@ -128,7 +127,7 @@ void *vm_page_fault(void *fault_addr, void *esp)
 
 static void *load_swap(struct page_info *page_info)
 {
-  void *kpage = vm_alloc_get_page(PAL_USER, page_info->upage, STACK);
+  void *kpage = vm_alloc_get_page(PAL_USER, page_info->upage, STACK, NULL);
   if (!kpage)
   {
     return NULL;
@@ -149,22 +148,30 @@ static void *load_swap(struct page_info *page_info)
 static void *load_file(struct page_info *page_info, enum frame_types status)
 {
   void *kpage;
-  // struct frame *frame = frame_list_find_upage(page_info->upage);
-  // // printf("the frame is: %x with upage :%x\n", frame, page_info->upage);
-  // /* If kpage is NULL, get a new page of memory.
-  //    If kpage is not NULL, that means it has already been allocated in the past.
-  //    */
-  // if (frame)
-  // {
-  //   // printf("frame exists: %x\n", frame);
-  //   if (!install_page(page_info->upage, frame->kpage, page_info->writable))
-  //   {
-  //     return NULL;
-  //   }
-  //   page_info->frame = frame;
-  //   return frame->kpage;
-  // }
-  kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage, status);
+  /* Sharing
+     Loop through the currently present list of frames.
+     If a frame with the upage we are looking for already exists, we do not need
+     to allocate a new page for it, but just install it.
+     Since the frame should already have a page that has data written into it,
+     the function returns directly from there */
+  struct frame *frame = frame_list_find(page_info);
+  /* If kpage is NULL, get a new page of memory.
+     If kpage is not NULL, that means it has already been allocated in the past.
+     */
+  if (frame)
+  {
+    if (!install_page(page_info->upage, frame->kpage, page_info->writable))
+    {
+      return NULL;
+    }
+    struct thread *t = thread_current();
+    start_sp_access(t);
+    page_info->frame = frame;
+    end_sp_access(t);
+    ft_add_pd_to_frame(frame, thread_current()->pagedir);
+    return frame->kpage;
+  }
+  kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, page_info->upage, status, page_info->file);
   if (!kpage)
   {
     return NULL;
@@ -191,7 +198,6 @@ static void *load_file(struct page_info *page_info, enum frame_types status)
   }
   /* The value page_zero_bytes is equal to PGSIZE - page_info->page_read_bytes */
   memset(kpage + page_info->page_read_bytes, 0, PGSIZE - page_info->page_read_bytes);
-  // printf("%x\n", kpage);
   return kpage;
 }
 
@@ -199,27 +205,22 @@ static void evict_and_swap(void)
 {
   /* The evicted frame is no longer present in the frame table/list */
   struct frame *evicted = ft_evict();
+  /* Acquire frame lock to prevent other processes from tapping into this frame */
+  lock_acquire(&evicted->lock);
+  /* Destroy this frame for all other pagedirs */
+  ft_destroy_frame_sharing(evicted);
   struct page_info *page_info = sp_search_page_info(evicted->owner, evicted->upage);
-  size_t index;
   switch (evicted->type)
   {
   case STACK:
-    index = st_insert(evicted->upage);
-    start_sp_access(evicted->owner);
-    page_info->page_status = PAGE_SWAP;
-    page_info->index = index;
-    end_sp_access(evicted->owner);
+    perform_swap(evicted, page_info);
     break;
   case FILE:
     /* Check if these frames have been written to. If so, write them to the
        stack. If not, just remove them. */
     if (pagedir_is_dirty(evicted->owner->pagedir, evicted->upage))
     {
-      index = st_insert(evicted->upage);
-      start_sp_access(evicted->owner);
-      page_info->page_status = PAGE_SWAP;
-      page_info->index = index;
-      end_sp_access(evicted->owner);
+      perform_swap(evicted, page_info);
     }
     break;
   case MMAP:
@@ -246,6 +247,20 @@ static void evict_and_swap(void)
   free(evicted);
 }
 
+static void perform_swap(struct frame *evicted, struct page_info *page_info)
+{
+  size_t index = st_insert(evicted->upage);
+  if (index == -1)
+  {
+    lock_release(&evicted->lock);
+    exit(-1);
+  }
+  start_sp_access(evicted->owner);
+  page_info->page_status = PAGE_SWAP;
+  page_info->index = index;
+  end_sp_access(evicted->owner);
+}
+
 /* VM free page. The VM will search for the pointer provided in the frame table.
    It will assert that the Search has to return something valid.
    The VM will then remove this page from the frame table and the supplemental
@@ -255,6 +270,14 @@ void vm_free_page(void *kpage)
   start_vm_access();
   struct frame *frame = ft_search_frame(kpage);
   ASSERT(frame); /* If the search fails, panic */
+  struct thread *t = thread_current();
+  struct page_info *page_info = sp_search_page_info(t, frame->upage);
+  if (page_info)
+  {
+    start_sp_access(t);
+    page_info->frame = NULL;
+    end_sp_access(t);
+  }
   ft_destroy_frame(frame);
   end_vm_access();
 }
@@ -272,9 +295,8 @@ void *vm_grow_stack(void *upage)
   page_info->upage = upage;
   /* Stack pages have to be writable */
   page_info->writable = true;
-  // printf("addr: %x read: %d, zero: %d\n", upage, page_read_bytes, page_zero_bytes);
   sp_insert_page_info(page_info);
-  void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, upage, STACK);
+  void *kpage = vm_alloc_get_page(PAL_USER | PAL_ZERO, upage, STACK, NULL);
   if (kpage != NULL)
   {
     if (!install_page(upage, kpage, true))

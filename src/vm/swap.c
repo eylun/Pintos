@@ -75,12 +75,17 @@ void st_retrieve(size_t index, void *kpage)
 {
   start_st_access();
   ASSERT(bitmap_test(st.swap_bitmap, index) != 0);
-  /* ST access can be ended here since block writing is synchronized internally */
-  end_st_access();
   read_from_block(index, kpage);
-  /* Re-obtain access to the st after block has finished reading to flip the
-     bit in the bitmap */
+  bitmap_flip(st.swap_bitmap, index);
+  end_st_access();
+}
+
+/* Use the index to free the swap space. By flipping the bit, we allow future
+   processes to overwrite the block space that was previously occupied. */
+void st_free(size_t index)
+{
   start_st_access();
+  ASSERT(bitmap_test(st.swap_bitmap, index) != 0);
   bitmap_flip(st.swap_bitmap, index);
   end_st_access();
 }
