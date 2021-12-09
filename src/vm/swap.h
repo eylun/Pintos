@@ -14,8 +14,8 @@
 
 struct swap
 {
-  struct bitmap *swap_bitmap;
-  struct block *block;
+  struct bitmap *swap_bitmap; /* Bitmap for indication which index is occupied */
+  struct block *block;        /* Block device */
 };
 
 /* Initialization */

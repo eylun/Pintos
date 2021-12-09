@@ -22,16 +22,24 @@ static void *load_file(struct page_info *, enum frame_types);
 static void evict_and_swap(void);
 static void perform_swap(struct frame *, struct page_info *);
 
+void start_vm_access(void);
+void end_vm_access(void);
+bool is_stack_access(void *, void *);
+
+/* Acquire the VM lock */
 void start_vm_access(void)
 {
   lock_acquire(&vm_lock);
 }
 
+/* Release the VM lock */
 void end_vm_access(void)
 {
   lock_release(&vm_lock);
 }
 
+/* VM initialization. This initializes the frame table, frame list and swap
+   table, as well as their locks */
 void vm_init(void)
 {
   /* Initialize vm lock */
@@ -98,12 +106,12 @@ bool is_stack_access(void *fault_addr, void *esp)
    THIS ONLY HAPPENS WHEN PASSED IN FROM SYSCALL VALIDATION */
 void *vm_page_fault(void *fault_addr, void *esp)
 {
-  // Check if fault_addr is a key in this thread's SPT
+  /* Check if fault_addr is a key in this thread's SPT */
   struct thread *cur = thread_current();
   void *aligned = pg_round_down(fault_addr);
   /* Faulted address does not have a value mapped to it in the sp_table
      This either means we are attempting to grow stack or throw an error. */
-  struct page_info *page_info = sp_search_page_info(thread_current(), aligned);
+  struct page_info *page_info = sp_search_page_info(cur, aligned);
   if (!page_info)
   { /* Check if this page fault is a stack growth fault */
     if (is_stack_access(fault_addr, esp))
@@ -125,6 +133,8 @@ void *vm_page_fault(void *fault_addr, void *esp)
   }
 }
 
+/* Function to load a page in if the page_info is noted to be a 'PAGE_SWAP'.
+   This function will retrieve a page from the swap table if it is present. */
 static void *load_swap(struct page_info *page_info)
 {
   void *kpage = vm_alloc_get_page(PAL_USER, page_info->upage, STACK, NULL);
@@ -145,6 +155,10 @@ static void *load_swap(struct page_info *page_info)
   return kpage;
 }
 
+/* Function to load a page in if the page_info is noted to be 'PAGE_MMAP' or
+   'PAGE_FILESYS'. This function will try to commence sharing as well. If a
+   page_info is passed in with 0 bytes to read, then instead of reading from
+   the filesystem, the function will just create a blank page. */
 static void *load_file(struct page_info *page_info, enum frame_types status)
 {
   void *kpage;
@@ -184,7 +198,7 @@ static void *load_file(struct page_info *page_info, enum frame_types status)
   }
 
   /* Load data into the page. */
-  if (page_info->page_read_bytes != 0)
+  if (page_info->page_read_bytes != ZERO)
   {
     start_filesys_access();
     file_seek(page_info->file, page_info->start);
@@ -197,16 +211,20 @@ static void *load_file(struct page_info *page_info, enum frame_types status)
     end_filesys_access();
   }
   /* The value page_zero_bytes is equal to PGSIZE - page_info->page_read_bytes */
-  memset(kpage + page_info->page_read_bytes, 0, PGSIZE - page_info->page_read_bytes);
+  memset(kpage + page_info->page_read_bytes, ZERO, PGSIZE - page_info->page_read_bytes);
   return kpage;
 }
 
+/* Identifies a frame and inserts it into the swap table. After insertion, the
+   function will free the frame. Immediately after this function ends, the
+   function ft_request_frame() is called immediately while VM lock is still held
+   so nothing can 'steal' the new empty frame slot. */
 static void evict_and_swap(void)
 {
   /* The evicted frame is no longer present in the frame table/list */
   struct frame *evicted = ft_evict();
-  /* Acquire frame lock to prevent other processes from tapping into this frame */
-  lock_acquire(&evicted->lock);
+  /* The process exits ft_evict() while holding onto the evicted frame's lock */
+
   /* Destroy this frame for all other pagedirs */
   ft_destroy_frame_sharing(evicted);
   struct page_info *page_info = sp_search_page_info(evicted->owner, evicted->upage);
@@ -240,20 +258,20 @@ static void evict_and_swap(void)
   start_sp_access(evicted->owner);
   page_info->frame = NULL;
   end_sp_access(evicted->owner);
-  /* Clear the pagedir of the owner so it can no longer access this frame */
   pagedir_clear_page(evicted->owner->pagedir, evicted->upage);
   /* Free the page of the evicted frame and the frame itself */
   palloc_free_page(evicted->kpage);
   free(evicted);
 }
 
+/* Function to perform the actual swapping. */
 static void perform_swap(struct frame *evicted, struct page_info *page_info)
 {
   size_t index = st_insert(evicted->upage);
-  if (index == -1)
+  if (index == BITMAP_ERROR)
   {
     lock_release(&evicted->lock);
-    exit(-1);
+    exit(EXIT_CODE);
   }
   start_sp_access(evicted->owner);
   page_info->page_status = PAGE_SWAP;
@@ -286,10 +304,9 @@ void vm_free_page(void *kpage)
 void *vm_grow_stack(void *upage)
 {
   /* Add page_info of this new stack into the thread's sp table */
-  struct thread *t = thread_current();
-  /*Malloc new page_info for stack page
-    1. upage
-    2. writable */
+  /* Malloc new page_info for stack page
+     1. upage
+     2. writable */
   struct page_info *page_info = calloc(1, sizeof(struct page_info));
   page_info->page_status = PAGE_STACK;
   page_info->upage = upage;

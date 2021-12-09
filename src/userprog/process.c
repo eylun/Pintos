@@ -55,7 +55,7 @@ tid_t process_execute(const char *file_name)
   /* VM NOTE: There is no need to vm alloc this because this is for
      argument parsing purposes. It will be freed once parsing is over. */
   fn_copy = palloc_get_page(0);
-  if (fn_copy == NULL)
+  if (!fn_copy)
     return TID_ERROR;
   strlcpy(fn_copy, file_name, PGSIZE);
 
@@ -320,7 +320,6 @@ int process_wait(tid_t child_tid)
 void process_exit(void)
 {
   struct thread *cur = thread_current();
-  uint32_t *pd;
 
   /* Completely destroy the thread's supplemental page table, freeing all
      pages associated IF there are any */
@@ -498,7 +497,7 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create();
-  if (t->pagedir == NULL)
+  if (!t->pagedir)
     goto done;
   process_activate();
 
@@ -506,7 +505,7 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
   start_filesys_access();
   file = filesys_open(file_name);
   end_filesys_access();
-  if (file == NULL)
+  if (!file)
   {
     printf("load: %s: open failed\n", file_name);
     goto done;
@@ -675,7 +674,6 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
   file_seek(file, ofs);
   off_t start = ofs;
   end_filesys_access();
-  // printf("loading...\n");
   while (read_bytes > 0 || zero_bytes > 0)
   {
     /* Calculate how to fill this page.
@@ -684,7 +682,6 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-    struct thread *t = thread_current();
     /*Malloc new page_info
       Fill in page_info
       Things to fill:
@@ -713,7 +710,7 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack(void **esp)
 {
-  uint8_t *kpage, *upage = (uint8_t *)PHYS_BASE - PGSIZE;
+  uint8_t *upage = (uint8_t *)PHYS_BASE - PGSIZE;
   if (vm_grow_stack(upage))
   {
     *esp = PHYS_BASE;
@@ -737,7 +734,7 @@ bool install_page(void *upage, void *kpage, bool writable)
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
-  return (pagedir_get_page(t->pagedir, upage) == NULL && pagedir_set_page(t->pagedir, upage, kpage, writable));
+  return (!pagedir_get_page(t->pagedir, upage) && pagedir_set_page(t->pagedir, upage, kpage, writable));
 }
 
 unsigned fd_table_hash_func(const struct hash_elem *e, void *aux UNUSED)
