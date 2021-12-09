@@ -330,9 +330,14 @@ static void sys_read(struct intr_frame *f)
       struct file_descriptor *open_descriptor = hash_entry(elem, struct file_descriptor, hash_elem);
       if (open_descriptor != NULL)
       {
+        void *upage = pg_round_down(buffer);
+        struct page_info *page_info = sp_search_page_info(thread_current(), upage);
+        /* Acquire the frame lock before reading to the buffer (page) */
+        lock_acquire(&page_info->frame->lock);
         start_filesys_access();
         ret = file_read(open_descriptor->file, (void *)buffer, size);
         end_filesys_access();
+        lock_release(&page_info->frame->lock);
       }
     }
   }
@@ -368,9 +373,14 @@ static void sys_write(struct intr_frame *f)
       struct file_descriptor *open_descriptor = hash_entry(elem, struct file_descriptor, hash_elem);
       if (open_descriptor != NULL)
       {
+        void *upage = pg_round_down(buffer);
+        struct page_info *page_info = sp_search_page_info(thread_current(), upage);
+        /* Acquire the frame lock before reading from the buffer (page) */
+        lock_acquire(&page_info->frame->lock);
         start_filesys_access();
         ret = file_write(open_descriptor->file, buffer, size);
         end_filesys_access();
+        lock_release(&page_info->frame->lock);
       }
     }
   }

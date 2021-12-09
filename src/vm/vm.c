@@ -223,8 +223,8 @@ static void evict_and_swap(void)
 {
   /* The evicted frame is no longer present in the frame table/list */
   struct frame *evicted = ft_evict();
-  /* Acquire frame lock to prevent other processes from tapping into this frame */
-  lock_acquire(&evicted->lock);
+  /* The process exits ft_evict() while holding onto the evicted frame's lock */
+
   /* Destroy this frame for all other pagedirs */
   ft_destroy_frame_sharing(evicted);
   struct page_info *page_info = sp_search_page_info(evicted->owner, evicted->upage);
@@ -258,8 +258,6 @@ static void evict_and_swap(void)
   start_sp_access(evicted->owner);
   page_info->frame = NULL;
   end_sp_access(evicted->owner);
-  /* Clear the pagedir of the owner so it can no longer access this frame */
-  ft_destroy_frame_sharing(evicted);
   pagedir_clear_page(evicted->owner->pagedir, evicted->upage);
   /* Free the page of the evicted frame and the frame itself */
   palloc_free_page(evicted->kpage);

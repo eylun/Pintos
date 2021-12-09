@@ -130,6 +130,8 @@ struct frame *ft_evict(void)
   while (e != list_end(&frame_list))
   {
     evictee = list_entry(e, struct frame, listelem);
+    /* Acquire frame lock to prevent other processes from tapping into this frame */
+    lock_acquire(&evictee->lock);
     /* If the page has not been accessed, it will be used as the evictee */
     if (!pagedir_is_accessed(evictee->owner->pagedir, evictee->upage))
     {
@@ -145,6 +147,7 @@ struct frame *ft_evict(void)
       refresher = e;
       e = list_remove(e);
       list_push_back(&frame_list, refresher);
+      lock_release(&evictee->lock);
     }
   }
   end_ft_access();
