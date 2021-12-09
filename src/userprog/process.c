@@ -55,7 +55,7 @@ tid_t process_execute(const char *file_name)
   /* VM NOTE: There is no need to vm alloc this because this is for
      argument parsing purposes. It will be freed once parsing is over. */
   fn_copy = palloc_get_page(0);
-  if (fn_copy == NULL)
+  if (!fn_copy)
     return TID_ERROR;
   strlcpy(fn_copy, file_name, PGSIZE);
 
@@ -497,7 +497,7 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create();
-  if (t->pagedir == NULL)
+  if (!t->pagedir)
     goto done;
   process_activate();
 
@@ -505,7 +505,7 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
   start_filesys_access();
   file = filesys_open(file_name);
   end_filesys_access();
-  if (file == NULL)
+  if (!file)
   {
     printf("load: %s: open failed\n", file_name);
     goto done;
@@ -734,7 +734,7 @@ bool install_page(void *upage, void *kpage, bool writable)
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
-  return (pagedir_get_page(t->pagedir, upage) == NULL && pagedir_set_page(t->pagedir, upage, kpage, writable));
+  return (!pagedir_get_page(t->pagedir, upage) && pagedir_set_page(t->pagedir, upage, kpage, writable));
 }
 
 unsigned fd_table_hash_func(const struct hash_elem *e, void *aux UNUSED)

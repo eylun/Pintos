@@ -249,7 +249,7 @@ static void sys_open(struct intr_frame *f)
     struct thread *current_thread = thread_current();
 
     struct file_descriptor *descriptor = malloc(sizeof(struct file_descriptor));
-    if (descriptor == NULL)
+    if (!descriptor)
     {
       end_filesys_access();
       exit(EXIT_CODE);
@@ -267,12 +267,13 @@ static void sys_open(struct intr_frame *f)
 
 /* Returns a hash_elem equal to the file_descriptor's hash_elem (fd) from
   the current process's fd_table or null pointer if no such element exists */
-struct hash_elem *get_elem(struct file_descriptor *descriptor, int fd)
+struct hash_elem *get_elem(int fd)
 {
+  struct file_descriptor descriptor;
   struct thread *current_thread = thread_current();
-  descriptor->fd = fd;
+  descriptor.fd = fd;
 
-  return hash_find(&current_thread->process->fd_table, &descriptor->hash_elem);
+  return hash_find(&current_thread->process->fd_table, &descriptor.hash_elem);
 }
 
 static void sys_filesize(struct intr_frame *f)
@@ -282,9 +283,8 @@ static void sys_filesize(struct intr_frame *f)
   int fd = *(esp + 1);
 
   int file_size = 0;
-  struct file_descriptor descriptor;
 
-  struct hash_elem *elem = get_elem(&descriptor, fd);
+  struct hash_elem *elem = get_elem(fd);
 
   if (elem != NULL)
   {
@@ -322,8 +322,7 @@ static void sys_read(struct intr_frame *f)
   }
   else
   {
-    struct file_descriptor descriptor;
-    struct hash_elem *elem = get_elem(&descriptor, fd);
+    struct hash_elem *elem = get_elem(fd);
 
     if (elem != NULL)
     {
@@ -364,9 +363,7 @@ static void sys_write(struct intr_frame *f)
   }
   else
   {
-    struct file_descriptor descriptor;
-
-    struct hash_elem *elem = get_elem(&descriptor, fd);
+    struct hash_elem *elem = get_elem(fd);
 
     if (elem != NULL)
     {
@@ -396,9 +393,7 @@ static void sys_seek(struct intr_frame *f)
   int fd = *(esp + 1);
   unsigned position = (unsigned)*(esp + 2);
 
-  struct file_descriptor descriptor;
-
-  struct hash_elem *elem = get_elem(&descriptor, fd);
+  struct hash_elem *elem = get_elem(fd);
 
   if (elem != NULL)
   {
@@ -419,9 +414,8 @@ static void sys_tell(struct intr_frame *f)
   int fd = *(esp + 1);
 
   unsigned pos = 0;
-  struct file_descriptor descriptor;
 
-  struct hash_elem *elem = get_elem(&descriptor, fd);
+  struct hash_elem *elem = get_elem(fd);
 
   if (elem != NULL)
   {

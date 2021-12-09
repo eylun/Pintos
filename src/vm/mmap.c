@@ -45,15 +45,14 @@ mapid_t mmap_map(int fd, void *addr)
 
     /* Access file corresponding to the given fd */
     /* Returns -1 if the given file_descriptor is not found in the process's fd_table */
-    struct file_descriptor descriptor;
-    struct hash_elem *elem = get_elem(&descriptor, fd);
+    struct hash_elem *elem = get_elem(fd);
 
-    if (elem == NULL)
+    if (!elem)
     {
         return MMAP_ERROR;
     }
     struct file_descriptor *open_descriptor = hash_entry(elem, struct file_descriptor, hash_elem);
-    if (open_descriptor == NULL)
+    if (!open_descriptor)
     {
         return MMAP_ERROR;
     }

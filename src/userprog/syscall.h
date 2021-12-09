@@ -23,7 +23,7 @@ void syscall_init(void);
 void start_filesys_access(void);
 void end_filesys_access(void);
 void check_and_end_filesys_access(void);
-struct hash_elem *get_elem(struct file_descriptor *, int);
+struct hash_elem *get_elem(int);
 
 void exit(int);
 
